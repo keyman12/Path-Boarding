@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Path brand design tokens (section 8 of plan) */
+:root {
+  /* Primary (green) */
+  --path-primary: #297d2d;
+  --path-primary-light-1: #3b9f40;
+  --path-primary-light-2: #49bc4e;
+  /* Secondary (red/coral) */
+  --path-secondary: #ff5252;
+  --path-secondary-light-1: #ff8a80;
+  --path-secondary-light-2: #ffa49c;
+  /* Greyscale */
+  --path-grey-900: #1a1a1a;
+  --path-grey-700: #4a4a4a;
+  --path-grey-500: #737373;
+  --path-grey-300: #a3a3a3;
+  --path-grey-100: #f5f5f5;
+  --path-white: #ffffff;
+}
+
+body {
+  font-family: var(--font-roboto), sans-serif;
+  color: var(--path-grey-900);
+  background-color: var(--path-white);
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-poppins), sans-serif;
+}
