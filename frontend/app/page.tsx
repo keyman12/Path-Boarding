@@ -26,10 +26,10 @@ export default function Home() {
           Start boarding
         </Link>
         <Link
-          href="/developer"
+          href="/boarding-api"
           className="px-6 py-3 border border-path-primary text-path-primary rounded-lg font-medium hover:bg-path-grey-100 transition-colors"
         >
-          API tester
+          Boarding API
         </Link>
         <Link
           href="/admin"

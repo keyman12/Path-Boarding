@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { apiGet, apiPost } from "@/lib/api";
+import { API_BASE, apiGet, apiPost } from "@/lib/api";
 
 type InviteInfo = {
   partner: { name: string; logo_url?: string | null };
@@ -175,16 +175,22 @@ export default function BoardingEntryPage() {
 
   return (
     <main className="min-h-screen flex flex-col p-6 md:p-8 font-roboto bg-white text-path-grey-900">
-      <header className="flex items-center justify-between gap-4 mb-8 flex-wrap">
+      <header className="flex items-start justify-between gap-4 mb-8 flex-wrap">
         <div className="flex items-center gap-4">
           <Image src="/logo-path.png" alt="Path" width={140} height={40} />
-          {inviteInfo.partner.logo_url ? (
-            <img src={inviteInfo.partner.logo_url} alt="" className="h-8 w-auto object-contain" />
-          ) : null}
         </div>
-        <p className="text-path-p2 text-path-grey-600">
-          In partnership with <strong>{inviteInfo.partner.name}</strong>
-        </p>
+        <div className="flex flex-col items-end gap-2">
+          {inviteInfo.partner.logo_url && (
+            <img
+              src={`${API_BASE}${inviteInfo.partner.logo_url}`}
+              alt={`${inviteInfo.partner.name} logo`}
+              className="h-10 w-auto object-contain max-w-[200px]"
+            />
+          )}
+          <p className="text-path-p2 text-path-grey-600">
+            In partnership with <strong>{inviteInfo.partner.name}</strong>
+          </p>
+        </div>
       </header>
 
       <div className="flex-1 max-w-md mx-auto w-full">
