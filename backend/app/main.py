@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -7,6 +8,8 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.models import Base  # noqa: F401 - register models
 from app.routers import admin, auth, boarding, health, partners
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Path Boarding API",
@@ -36,6 +39,7 @@ app.mount("/uploads", StaticFiles(directory=str(upload_dir)), name="uploads")
 
 @app.on_event("startup")
 async def startup():
+    logger.info("CORS allowed origins: %s", settings.CORS_ORIGINS)
     # Seed initial Path Admin if no admin users exist (Admin / keywee50)
     from app.core.database import SessionLocal
     from app.core.security import get_password_hash

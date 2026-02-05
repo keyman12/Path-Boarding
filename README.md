@@ -8,7 +8,9 @@ Merchant boarding application for payment acceptance (Stripe Connect–style). I
 - **frontend/** – Next.js App Router (boarding UI, Path design tokens, logo). See [frontend/README.md](frontend/README.md).
 - **Path Design/** – Path brand guidelines and logo (reference for frontend).
 
-## Quick start
+## Quick start (local on your Mac)
+
+The steps below are for **local development on your Mac**. For AWS deployment when the app is complete, see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 1. **Backend**
    - `cd backend && python -m venv venv && source venv/bin/activate` (or `venv\Scripts\activate` on Windows).
@@ -28,4 +30,5 @@ Merchant boarding application for payment acceptance (Stripe Connect–style). I
 
 ## Deployment
 
-See **section 12. AWS deployment instructions (detailed)** in the plan (`.cursor/plans/merchant_boarding_application_*.plan.md` or project plan doc): RDS Postgres, EC2, nginx, systemd, secrets, and optional HTTPS/ALB.
+- **AWS:** See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the requirement to deploy so the frontend and API are **same-origin** (no CORS/cross-site requests), avoiding browser blocking and security issues from cross-origin access.
+- Detailed steps (RDS Postgres, EC2, nginx, systemd, secrets, HTTPS/ALB) are in the project plan (`.cursor/plans/merchant_boarding_application_*.plan.md` or equivalent).

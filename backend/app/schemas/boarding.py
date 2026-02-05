@@ -26,10 +26,23 @@ class Step1Response(BaseModel):
     message: str = "Verification email sent. Check your inbox."
 
 
-class VerifyEmailSubmit(BaseModel):
-    code: str
+class VerifyEmailCodeSubmit(BaseModel):
+    code: str  # 6-digit code from email (digits only, validated in endpoint)
 
 
 class VerifyEmailResponse(BaseModel):
     verified: bool
     message: str = "Email verified. You can continue."
+
+
+class VerifyStatusResponse(BaseModel):
+    verified: bool
+
+
+class TestClearEmailSubmit(BaseModel):
+    email: str  # email to clear for testing (re-use same email)
+
+
+class TestClearEmailResponse(BaseModel):
+    cleared: bool
+    message: str

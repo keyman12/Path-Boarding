@@ -5,6 +5,17 @@
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+function errorMessage(detail: unknown): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0];
+    if (first && typeof first === "object" && "msg" in first) return String((first as { msg: unknown }).msg);
+    return detail.map((d) => (typeof d === "object" && d && "msg" in d ? (d as { msg: unknown }).msg : d)).join("; ");
+  }
+  if (detail && typeof detail === "object" && "message" in (detail as object)) return String((detail as { message: unknown }).message);
+  return "Request failed";
+}
+
 export type ApiResponse<T> =
   | { data: T; error?: never }
   | { data?: never; error: string; validation_errors?: Record<string, string[]> };
@@ -18,7 +29,7 @@ export async function apiGet<T>(path: string, options?: RequestInit): Promise<Ap
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     return {
-      error: json.detail ?? json.message ?? "Request failed",
+      error: errorMessage(json.detail ?? json.message),
       validation_errors: json.validation_errors ?? json.detail,
     };
   }
@@ -39,7 +50,7 @@ export async function apiPut<T>(
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     return {
-      error: json.detail ?? json.message ?? "Request failed",
+      error: errorMessage(json.detail ?? json.message),
       validation_errors: json.validation_errors ?? json.detail,
     };
   }
@@ -60,7 +71,7 @@ export async function apiPost<T>(
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     return {
-      error: json.detail ?? json.message ?? "Request failed",
+      error: errorMessage(json.detail ?? json.message),
       validation_errors: json.validation_errors ?? json.detail,
     };
   }
@@ -81,7 +92,7 @@ export async function apiPatch<T>(
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     return {
-      error: json.detail ?? json.message ?? "Request failed",
+      error: errorMessage(json.detail ?? json.message),
       validation_errors: json.validation_errors ?? json.detail,
     };
   }
@@ -100,7 +111,7 @@ export async function apiDelete<T = void>(
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     return {
-      error: json.detail ?? json.message ?? "Request failed",
+      error: errorMessage(json.detail ?? json.message),
       validation_errors: json.validation_errors ?? json.detail,
     };
   }

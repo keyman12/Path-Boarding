@@ -8,11 +8,13 @@ Next.js App Router frontend for merchant boarding with Path branding (section 8 
 npm install
 ```
 
-Create `.env.local` (optional):
+**Local (Mac) development:** Copy `.env.example` to `.env.local` (or create `.env.local` with):
 
 ```
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
+
+For **AWS deployment** (same-origin, no CORS), see [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md).
 
 ## Run
 

@@ -435,7 +435,7 @@ export default function AdminPage() {
       </div>
 
       <footer className="mt-12 pt-6 border-t border-path-grey-200 text-path-p2 text-path-grey-500">
-        © Path2ai.tech
+        © 2026 Path2ai.tech
       </footer>
     </main>
   );

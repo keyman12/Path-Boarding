@@ -1,5 +1,22 @@
-from pydantic_settings import BaseSettings
 from typing import List
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings
+
+
+def _parse_cors_origins(s: str) -> List[str]:
+    """Parse CORS_ORIGINS from comma-separated or JSON array string."""
+    s = (s or "").strip()
+    if not s:
+        return []
+    if s.startswith("["):
+        import json
+        try:
+            out = json.loads(s)
+            return [str(x).strip() for x in out if x]
+        except Exception:
+            pass
+    return [x.strip() for x in s.split(",") if x.strip()]
 
 
 class Settings(BaseSettings):
@@ -12,8 +29,15 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
-    # CORS
+    # CORS – must include the origin where the frontend runs (e.g. where verification links open)
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def cors_origins_list(cls, v: object) -> List[str]:
+        if isinstance(v, list):
+            return [str(x).strip() for x in v if x]
+        return _parse_cors_origins(str(v) if v else "")
 
     # App
     API_V1_PREFIX: str = ""
@@ -25,6 +49,16 @@ class Settings(BaseSettings):
     # Uploads (ISV logos) – path on disk; served at /uploads/
     UPLOAD_DIR: str = "uploads"
     LOGO_MAX_SIZE_BYTES: int = 512 * 1024  # 512KB for welcome screen
+
+    # Email (verification link) – from Path2ai.tech; set in .env for production
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = "noreply@path2ai.tech"
+    SMTP_FROM_NAME: str = "Path Boarding"
+    # Logo URL in email body (absolute); e.g. FRONTEND_BASE_URL + /logo-path.png
+    EMAIL_LOGO_URL: str = ""
 
     class Config:
         env_file = ".env"
