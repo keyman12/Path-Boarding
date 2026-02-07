@@ -1,8 +1,10 @@
 import logging
+import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -266,3 +268,113 @@ def test_clear_email(body: TestClearEmailSubmit, db: Session = Depends(get_db)):
     db.commit()
     logger.info("Test clear email: removed registration for %s", email)
     return TestClearEmailResponse(cleared=True, message="Registration cleared. You can use this email again.")
+
+
+# UK postcode format for address lookup validation
+_UK_POSTCODE_REGEX = re.compile(r"^[A-Z]{1,2}[0-9][0-9A-Z]?\s?[0-9][A-Z]{2}$", re.IGNORECASE)
+
+
+def _normalise_uk_postcode(postcode: str) -> str:
+    """Uppercase and single space."""
+    s = postcode.strip().upper().replace(" ", "")
+    if len(s) >= 5:
+        # Insert space before last 3 chars (e.g. SW1A2AA -> SW1A 2AA)
+        s = s[:-3] + " " + s[-3:]
+    return s
+
+
+def _ideal_postcodes_uk_lookup(postcode: str, api_key: str) -> list:
+    """Call Ideal Postcodes API for UK; return list of { addressLine1, addressLine2, town, postcode }."""
+    # Postcode in path: space and case insensitive; we send normalised
+    url = f"https://api.ideal-postcodes.co.uk/v1/postcodes/{postcode}"
+    params = {"api_key": api_key}
+    with httpx.Client(timeout=10.0) as client:
+        resp = client.get(url, params=params)
+    if resp.status_code == 402:
+        try:
+            body = resp.json()
+            code = body.get("code")
+            if code == 4020:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Address lookup credit has run out. Please add credits or update the API key in settings.",
+                )
+            if code == 4021:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Address lookup limit reached for today. Please try again tomorrow or increase your limit.",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=503,
+            detail="Address lookup credit or limit reached. Please update the API key or add credits.",
+        )
+    if resp.status_code != 200:
+        try:
+            body = resp.json()
+            msg = body.get("message", resp.text[:200])
+        except Exception:
+            msg = resp.text[:200] or "Address lookup temporarily unavailable."
+        logger.warning("Ideal Postcodes returned %s: %s", resp.status_code, msg)
+        raise HTTPException(
+            status_code=503,
+            detail="Address lookup temporarily unavailable. Please enter your address manually.",
+        )
+    try:
+        data = resp.json()
+    except Exception as e:
+        logger.warning("Ideal Postcodes invalid JSON: %s", e)
+        raise HTTPException(
+            status_code=502,
+            detail="Could not load addresses. Please enter your address manually.",
+        ) from e
+    # Response: { "code": 2000, "result": [ { "line_1", "line_2", "post_town", "postcode", ... } ] }
+    results = data.get("result") if isinstance(data.get("result"), list) else []
+    out = []
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        line1 = (r.get("line_1") or "").strip()
+        line2 = (r.get("line_2") or "").strip()
+        town = (r.get("post_town") or r.get("town_or_city") or "").strip()
+        pc = (r.get("postcode") or "").strip() or postcode
+        if line1:
+            out.append({
+                "addressLine1": line1,
+                "addressLine2": line2,
+                "town": town,
+                "postcode": pc,
+            })
+    return out
+
+
+@router.get("/address-lookup")
+def address_lookup(
+    postcode: str = Query(..., min_length=1, description="UK postcode"),
+):
+    """
+    Public: lookup UK addresses by postcode via Ideal Postcodes.
+    Returns a list of { addressLine1, addressLine2, town, postcode }.
+    If ADDRESS_LOOKUP_UK_API_KEY is not set or the API fails (e.g. credit depleted), returns 503 so the frontend can fall back to manual entry.
+    """
+    if not settings.ADDRESS_LOOKUP_UK_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Address lookup not configured. Please enter your address manually.",
+        )
+    normalised = _normalise_uk_postcode(postcode)
+    if not _UK_POSTCODE_REGEX.match(normalised):
+        raise HTTPException(status_code=400, detail="Invalid UK postcode format.")
+    try:
+        return _ideal_postcodes_uk_lookup(normalised, settings.ADDRESS_LOOKUP_UK_API_KEY)
+    except HTTPException:
+        raise
+    except httpx.RequestError as e:
+        logger.warning("Ideal Postcodes request failed: %s", e)
+        raise HTTPException(
+            status_code=502,
+            detail="Could not load addresses. Please enter your address manually.",
+        ) from e

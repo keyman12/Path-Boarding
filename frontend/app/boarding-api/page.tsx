@@ -2,8 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { API_BASE, apiPost } from "@/lib/api";
+import { API_BASE, apiGet, apiPost } from "@/lib/api";
 
 const PARTNER_TOKEN_KEY = "path_partner_token";
 
@@ -13,8 +14,16 @@ function authHeaders(token: string) {
   return { Authorization: `Bearer ${token}` };
 }
 
+function clearPartnerAndRedirect(router: ReturnType<typeof useRouter>, setToken: (t: string | null) => void) {
+  localStorage.removeItem(PARTNER_TOKEN_KEY);
+  setToken(null);
+  router.replace("/");
+}
+
 export default function BoardingApiPage() {
+  const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
+  const [partnerName, setPartnerName] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -30,6 +39,24 @@ export default function BoardingApiPage() {
     const t = typeof window !== "undefined" ? localStorage.getItem(PARTNER_TOKEN_KEY) : null;
     setToken(t);
   }, []);
+
+  useEffect(() => {
+    if (!token) {
+      setPartnerName(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const res = await apiGet<{ name: string }>("/auth/partner/me", { headers: authHeaders(token) });
+      if (cancelled) return;
+      if (res.error && (res as { statusCode?: number }).statusCode === 401) {
+        clearPartnerAndRedirect(router, setToken);
+        return;
+      }
+      if (res.data) setPartnerName(res.data.name);
+    })();
+    return () => { cancelled = true; };
+  }, [token, router]);
 
   const handleLogin = useCallback(
     async (e: React.FormEvent) => {
@@ -66,7 +93,11 @@ export default function BoardingApiPage() {
       { merchant_name: merchantName || undefined, email: merchantEmail || undefined },
       { headers: authHeaders(token) }
     );
-    if (res.error) {
+      if (res.error) {
+      if ((res as { statusCode?: number }).statusCode === 401) {
+        clearPartnerAndRedirect(router, setToken);
+        return;
+      }
       setGenerateError(res.error);
       return;
     }
@@ -86,6 +117,10 @@ export default function BoardingApiPage() {
       { headers: authHeaders(token) }
     );
     if (res.error) {
+      if ((res as { statusCode?: number }).statusCode === 401) {
+        clearPartnerAndRedirect(router, setToken);
+        return;
+      }
       setGenerateError(res.error);
       return;
     }
@@ -202,7 +237,12 @@ export default function BoardingApiPage() {
       </header>
 
       <div className="max-w-3xl space-y-8">
-        <h1 className="text-path-h2 font-poppins text-path-primary">Boarding API</h1>
+        <div className="mb-2">
+          <h1 className="text-path-h2 font-poppins text-path-primary">
+            Welcome, {partnerName ?? "…"}
+          </h1>
+          <p className="text-path-p2 text-path-grey-600 mt-1">Boarding Administration</p>
+        </div>
 
         {/* API docs */}
         <section className="border border-path-grey-300 rounded-lg p-4">

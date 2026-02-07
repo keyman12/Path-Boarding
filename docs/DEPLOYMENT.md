@@ -34,3 +34,12 @@ Deploy so the frontend and backend are **same-origin** (no cross-origin requests
 - **Frontend:** Build with `NEXT_PUBLIC_API_URL` empty (or the same host path) so API requests are same-origin; e.g. proxy `/boarding`, `/auth`, `/health` to the backend on the same host.
 
 If you must use different origins (e.g. `app.example.com` and `api.example.com`), set the backend `CORS_ORIGINS` to include the frontend origin (see [EMAIL_VERIFICATION_SETUP.md](EMAIL_VERIFICATION_SETUP.md) and backend `.env.example`).
+
+### UK address lookup (Ideal Postcodes)
+
+For the Personal Details step, UK users can look up addresses by postcode. The backend proxies [Ideal Postcodes](https://ideal-postcodes.co.uk/). Configure the backend with:
+
+- **`ADDRESS_LOOKUP_UK_API_KEY`** – Get a key from [Ideal Postcodes](https://ideal-postcodes.co.uk/). Set it in the backend environment on AWS (e.g. Lambda env vars, ECS task definition, or EC2/systemd). You can use AWS Secrets Manager or Parameter Store if you prefer not to put the key in plain env.
+- **Outbound HTTPS** – The backend calls `https://api.ideal-postcodes.co.uk`. Ensure your AWS deployment allows outbound HTTPS (e.g. security groups, NAT if in a private VPC).
+
+If the key is not set or credit has run out, the address-lookup endpoint returns 503 with a clear message; users can still complete the form by entering their address manually. See [ADDRESS_LOOKUP.md](ADDRESS_LOOKUP.md) for details.

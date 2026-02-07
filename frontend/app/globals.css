@@ -30,3 +30,22 @@ body {
 h1, h2, h3, h4 {
   font-family: var(--font-poppins), sans-serif;
 }
+
+/* Global: Path-colour focus ring (FF8A80) for all inputs and selects */
+input:focus,
+select:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 2px var(--path-secondary-light-1) !important;
+  border-color: var(--path-secondary-light-1) !important;
+}
+
+/* Global: verified field tick (green checkmark at end of field) */
+.field-verified-tick {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #10b981; /* emerald-500 */
+  font-size: 1.125rem;
+  pointer-events: none;
+}

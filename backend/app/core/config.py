@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     # Logo URL in email body (absolute); e.g. FRONTEND_BASE_URL + /logo-path.png
     EMAIL_LOGO_URL: str = ""
 
+    # Address lookup per country (optional). If empty for a country, lookup returns 503 and users can type manually.
+    # UK: Ideal Postcodes – get a key at https://ideal-postcodes.co.uk/ (free trial then pay-as-you-go).
+    # Add keys for other countries as needed, e.g. ADDRESS_LOOKUP_IE_API_KEY.
+    ADDRESS_LOOKUP_UK_API_KEY: str = ""
+
     class Config:
         env_file = ".env"
         case_sensitive = True

@@ -23,13 +23,13 @@ export default function Home() {
           href="/board"
           className="px-6 py-3 bg-path-primary text-white rounded-lg font-medium hover:bg-path-primary-light-1 transition-colors"
         >
-          Start boarding
+          Merchant Boarding
         </Link>
         <Link
           href="/boarding-api"
           className="px-6 py-3 border border-path-primary text-path-primary rounded-lg font-medium hover:bg-path-grey-100 transition-colors"
         >
-          Boarding API
+          Partner Boarding
         </Link>
         <Link
           href="/admin"

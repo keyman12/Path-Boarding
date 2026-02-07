@@ -17,8 +17,8 @@ function errorMessage(detail: unknown): string {
 }
 
 export type ApiResponse<T> =
-  | { data: T; error?: never }
-  | { data?: never; error: string; validation_errors?: Record<string, string[]> };
+  | { data: T; error?: never; statusCode?: never }
+  | { data?: never; error: string; validation_errors?: Record<string, string[]>; statusCode?: number };
 
 export async function apiGet<T>(path: string, options?: RequestInit): Promise<ApiResponse<T>> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -31,6 +31,7 @@ export async function apiGet<T>(path: string, options?: RequestInit): Promise<Ap
     return {
       error: errorMessage(json.detail ?? json.message),
       validation_errors: json.validation_errors ?? json.detail,
+      statusCode: res.status,
     };
   }
   return { data: json as T };
@@ -52,6 +53,7 @@ export async function apiPut<T>(
     return {
       error: errorMessage(json.detail ?? json.message),
       validation_errors: json.validation_errors ?? json.detail,
+      statusCode: res.status,
     };
   }
   return { data: json as T };
@@ -73,6 +75,7 @@ export async function apiPost<T>(
     return {
       error: errorMessage(json.detail ?? json.message),
       validation_errors: json.validation_errors ?? json.detail,
+      statusCode: res.status,
     };
   }
   return { data: json as T };
@@ -94,6 +97,7 @@ export async function apiPatch<T>(
     return {
       error: errorMessage(json.detail ?? json.message),
       validation_errors: json.validation_errors ?? json.detail,
+      statusCode: res.status,
     };
   }
   return { data: json as T };
@@ -113,6 +117,7 @@ export async function apiDelete<T = void>(
     return {
       error: errorMessage(json.detail ?? json.message),
       validation_errors: json.validation_errors ?? json.detail,
+      statusCode: res.status,
     };
   }
   return { data: (res.status === 204 ? undefined : json) as T };

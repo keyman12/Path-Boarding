@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { API_BASE, apiGet, apiPatch, apiPost } from "@/lib/api";
 
@@ -14,7 +15,12 @@ function authHeaders(token: string) {
   return { Authorization: `Bearer ${token}` };
 }
 
+function isUnauthorized(res: { error?: string; statusCode?: number }): boolean {
+  return res.error != null && (res as { statusCode?: number }).statusCode === 401;
+}
+
 export default function AdminPage() {
+  const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
   const [loginUsername, setLoginUsername] = useState("Admin");
   const [loginPassword, setLoginPassword] = useState("");
@@ -54,17 +60,31 @@ export default function AdminPage() {
     setToken(t);
   }, []);
 
+  const clearAdminAndRedirect = useCallback(() => {
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    setToken(null);
+    router.replace("/");
+  }, [router]);
+
   const loadAdmins = useCallback(async () => {
     if (!token) return;
     const res = await apiGet<AdminUser[]>("/admin/users", { headers: authHeaders(token) });
+    if (isUnauthorized(res)) {
+      clearAdminAndRedirect();
+      return;
+    }
     if (res.data) setAdmins(res.data);
-  }, [token]);
+  }, [token, clearAdminAndRedirect]);
 
   const loadPartners = useCallback(async () => {
     if (!token) return;
     const res = await apiGet<Partner[]>("/admin/partners", { headers: authHeaders(token) });
+    if (isUnauthorized(res)) {
+      clearAdminAndRedirect();
+      return;
+    }
     if (res.data) setPartners(res.data);
-  }, [token]);
+  }, [token, clearAdminAndRedirect]);
 
   useEffect(() => {
     if (token) {
@@ -103,6 +123,7 @@ export default function AdminPage() {
     }
     const res = await apiPost<AdminUser>("/admin/users", { username: newAdminUsername, password: newAdminPassword }, { headers: authHeaders(token) });
     if (res.error) {
+      if (isUnauthorized(res)) { clearAdminAndRedirect(); return; }
       setCreateAdminError(res.error);
       return;
     }
@@ -124,6 +145,7 @@ export default function AdminPage() {
     }
     const res = await apiPatch(`/admin/users/${selectedAdminId}/password`, { new_password: adminPasswordNew }, { headers: authHeaders(token) });
     if (res.error) {
+      if (isUnauthorized(res)) { clearAdminAndRedirect(); return; }
       setChangePasswordError(res.error);
       return;
     }
@@ -155,6 +177,7 @@ export default function AdminPage() {
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
+      if (res.status === 401) { clearAdminAndRedirect(); return; }
       setSetupPartnerError(json.detail ?? json.message ?? "Request failed");
       return;
     }
@@ -189,6 +212,7 @@ export default function AdminPage() {
     }
     const res = await apiPatch<Partner>(`/admin/partners/${selectedPartnerId}`, body, { headers: authHeaders(token) });
     if (res.error) {
+      if (isUnauthorized(res)) { clearAdminAndRedirect(); return; }
       setUpdatePartnerError(res.error);
       return;
     }
@@ -214,6 +238,7 @@ export default function AdminPage() {
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
+      if (res.status === 401) { clearAdminAndRedirect(); return; }
       setUpdatePartnerError(json.detail ?? json.message ?? "Upload failed");
       return;
     }
@@ -232,6 +257,7 @@ export default function AdminPage() {
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
+      if (res.status === 401) { clearAdminAndRedirect(); return; }
       setUpdatePartnerError(json.detail ?? json.message ?? "Remove failed");
       return;
     }
@@ -251,6 +277,7 @@ export default function AdminPage() {
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
+      if (res.status === 401) { clearAdminAndRedirect(); return; }
       setUpdatePartnerError(json.detail ?? json.message ?? "Delete failed");
       return;
     }
