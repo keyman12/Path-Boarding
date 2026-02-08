@@ -259,12 +259,28 @@ sudo systemctl status path-boarding-backend path-boarding-frontend
 
 Backend runs gunicorn with uvicorn workers bound to `127.0.0.1:8000`; frontend runs `next start` (port 3000). Both use WorkingDirectory and EnvironmentFile as in the unit files. Adjust paths in the units if you use `/home/app` instead of `/opt/boarding`.
 
+**Initial Admin Account:**
+
+When the backend service starts for the first time, it automatically creates an initial admin user if none exist:
+
+- **Username:** `Admin`
+- **Password:** `keywee50`
+
+You can log in at `https://boarding.path2ai.tech/admin` with these credentials. Once logged in, you should immediately:
+1. Change the password from the admin panel
+2. Create additional admin accounts if needed
+3. Create partner accounts and send merchant invites
+
 ---
 
 ## 8. Monitoring and health checks
 
 - **Backend:** `GET https://boarding.path2ai.tech/health` returns `{"status":"ok","database":"connected"|"disconnected"}`. Use this for uptime checks.
 - **Frontend:** Load `https://boarding.path2ai.tech`; 200 means nginx and Next.js are up.
+- **API Documentation:** 
+  - Swagger UI: `https://boarding.path2ai.tech/docs`
+  - ReDoc: `https://boarding.path2ai.tech/redoc`
+- **Admin Login:** Test login at `https://boarding.path2ai.tech/admin` with initial credentials (Admin/keywee50)
 
 Optional:
 
@@ -285,12 +301,77 @@ Optional:
 7. nginx and HTTPS: copy deploy nginx config, reload nginx, run `certbot --nginx -d boarding.path2ai.tech` (section 5).
 8. Create `/opt/boarding/backend.env` and `/opt/boarding/uploads`, run migrations, build frontend with `NEXT_PUBLIC_API_URL=` empty.
 9. Install and start systemd units; verify `systemctl status` and `https://boarding.path2ai.tech/health`.
+10. Test the deployment: log in to admin panel (Admin/keywee50), verify API docs at `/docs`, test the boarding flow.
 
 After this, the site is reproducible from GitHub: clone, set env, run migrations, build frontend, start services. You can add the identity provider integration on this build once stable.
 
 ---
 
-## 10. Future: adding Path-MCP-Server on the same EC2
+## 10. Troubleshooting
+
+### Frontend/Backend returning 404 for pages
+
+**Symptom:** Clicking buttons like "Path Admin" or "Partner Boarding" returns `{"detail":"Not Found"}`
+
+**Cause:** nginx prefix matching causes `/admin` and `/boarding-api` (frontend pages) to be proxied to the backend instead of the frontend.
+
+**Fix:** The nginx config includes exact match locations (`location =`) for frontend pages. Ensure these are present BEFORE the backend API location blocks:
+
+```nginx
+location = /admin { proxy_pass http://boarding_frontend; ... }
+location = /boarding-api { proxy_pass http://boarding_frontend; ... }
+```
+
+### API docs (/docs, /redoc) return 404
+
+**Cause:** nginx is not proxying these paths to the backend.
+
+**Fix:** Ensure the nginx config includes locations for `/docs`, `/redoc`, and `/openapi.json` that proxy to the backend.
+
+### Database "does not exist" error during migrations
+
+**Symptom:** `alembic upgrade head` fails with "database 'boarding' does not exist"
+
+**Fix:** Create the database manually in RDS:
+```bash
+psql -h your-rds-endpoint -U your-master-user -d postgres
+CREATE DATABASE boarding;
+\q
+```
+
+### ConfigParser interpolation error with DATABASE_URL
+
+**Symptom:** Alembic fails with "invalid interpolation syntax" when DATABASE_URL contains `%`
+
+**Cause:** Special characters in passwords need URL encoding (e.g., `!` → `%21`), but ConfigParser treats `%` as interpolation.
+
+**Fix:** Already handled in `backend/alembic/env.py` which escapes `%` to `%%` for ConfigParser.
+
+### Permission denied when creating files
+
+**Symptom:** `bash: .env.production: Permission denied`
+
+**Fix:** Either use `sudo` for file operations, or change ownership:
+```bash
+sudo chown -R ec2-user:ec2-user /opt/boarding/repo
+```
+
+### Services fail to start
+
+Check logs:
+```bash
+sudo journalctl -u path-boarding-backend -n 50
+sudo journalctl -u path-boarding-frontend -n 50
+```
+
+Common issues:
+- Missing or incorrect `backend.env` values
+- Database not accessible (check RDS security group)
+- Port already in use (check with `sudo lsof -i :8000` and `sudo lsof -i :3000`)
+
+---
+
+## 11. Future: adding Path-MCP-Server on the same EC2
 
 When you add [Path-MCP-Server](https://github.com/keyman12/Path-MCP-Server) to this server:
 
@@ -304,7 +385,7 @@ No changes to the Path-Boarding deployment in this doc are required for MCP; the
 
 ---
 
-## 11. Files in this repo used for deployment
+## 12. Files in this repo used for deployment
 
 | File | Purpose |
 |------|--------|
