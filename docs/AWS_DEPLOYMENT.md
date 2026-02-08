@@ -51,8 +51,10 @@ The script (see `deploy/setup-ec2.sh`) will:
 
 - Update the system (`dnf update -y`).
 - Install Node.js 20 (or 18 LTS), Python 3.11+, nginx, certbot and python3-certbot-nginx.
+- Install cronie (for certbot auto-renewal via cron).
+- Stop and disable httpd (Apache) if present (to free ports 80/443 for nginx).
 - Create app directories, e.g. `/opt/boarding`, `/var/log/boarding`.
-- Ensure nginx and certbot are enabled.
+- Enable nginx and crond (start on boot).
 
 Do **not** configure nginx for the app yet; that comes after Certbot so we can use the correct server name and SSL.
 
@@ -90,45 +92,50 @@ You can create RDS **before** or **after** installing the app; run migrations (A
 
 ## 5. nginx and HTTPS (Certbot)
 
-Domain must already point to the Elastic IP.
+You need the repo on the server first so the deploy files exist. **Do section 6.1 (clone repo) now, then return here.** The domain **boarding.path2ai.tech** must already point to your Elastic IP.
 
-1. **Copy nginx app config** (from repo `deploy/nginx-boarding.path2ai.tech.conf`) to nginx:
+**Step 1 – Copy the nginx config**
 
-   ```bash
-   sudo cp /opt/boarding/repo/deploy/nginx-boarding.path2ai.tech.conf /etc/nginx/conf.d/boarding.path2ai.tech.conf
-   ```
+The config in the repo listens on port 80 and proxies API paths to the backend and everything else to the frontend. Copy it into nginx:
 
-2. **Initial HTTP-only config for Certbot**  
-   In the server block, use only `listen 80` and `server_name boarding.path2ai.tech`; comment out or omit `listen 443` until Certbot has run. Or use the provided “stage 1” snippet that only has port 80 and a simple `location /` returning 200 so Certbot can complete.
+```bash
+sudo cp /opt/boarding/repo/deploy/nginx-boarding.path2ai.tech.conf /etc/nginx/conf.d/boarding.path2ai.tech.conf
+```
 
-3. **Obtain certificate**
+**Step 2 – Start nginx with the config**
 
-   ```bash
-   sudo certbot --nginx -d boarding.path2ai.tech
-   ```
+```bash
+sudo nginx -t && sudo systemctl restart nginx
+```
 
-   Certbot will add the SSL server block and redirect HTTP→HTTPS. If you use the full `deploy/nginx-boarding.path2ai.tech.conf` **after** Certbot (which already adds SSL), merge any app-specific `location` blocks (API proxy, frontend proxy) into the Certbot-generated server block so one server block has both SSL and your proxies.
+(Use `restart` instead of `reload` since nginx might not be running yet.) You should now get a response (or nginx error page) when opening `http://boarding.path2ai.tech` in a browser. If `nginx -t` fails, fix the config path or syntax before continuing.
 
-4. **Final nginx config**  
-   Ensure:
-   - `listen 443 ssl` and `listen [::]:443 ssl`.
-   - `ssl_certificate` and `ssl_certificate_key` (Certbot sets these).
-   - API paths proxied to `http://127.0.0.1:8000`, e.g.:
-     - `location /health`, `location /auth`, `location /partners`, `location /boarding`, `location /admin`, `location /uploads`
-   - `location /` proxied to `http://127.0.0.1:3000` (Next.js).
+**Step 3 – Get the HTTPS certificate**
 
-   Reload nginx:
+```bash
+sudo certbot --nginx -d boarding.path2ai.tech
+```
 
-   ```bash
-   sudo nginx -t && sudo systemctl reload nginx
-   ```
+- Follow the prompts (email for renewal, agree to terms).
+- Certbot will add HTTPS (port 443) and certificate paths to the **same** server block and set up redirect from HTTP to HTTPS. Your existing `location` blocks (API and frontend proxy) are left in place.
+- When it finishes, nginx is usually reloaded automatically.
 
-5. **Auto-renewal**
+**Step 4 – Confirm HTTPS**
 
-   ```bash
-   sudo systemctl enable certbot.timer
-   sudo systemctl start certbot.timer
-   ```
+```bash
+sudo nginx -t && sudo systemctl restart nginx
+```
+
+Then open `https://boarding.path2ai.tech` in a browser. You should see the site over HTTPS. The backend and frontend will not respond until you start their systemd services (later in the guide).
+
+**Step 5 – Turn on certificate auto-renewal**
+
+```bash
+sudo systemctl enable certbot.timer
+sudo systemctl start certbot.timer
+```
+
+That’s it for nginx and Certbot. No manual merging of config or “stage 1” files; the repo config is ready as-is.
 
 ---
 
@@ -237,9 +244,9 @@ Optional:
 3. EC2 security group: 22, 80, 443 inbound; outbound as needed.
 4. Run `deploy/setup-ec2.sh` (or equivalent) for OS, Node, Python, nginx, Certbot.
 5. RDS PostgreSQL in same VPC, no public access; security group allows 5432 from EC2 only.
-6. nginx: install app config, then `certbot --nginx -d boarding.path2ai.tech`, then ensure API + frontend proxy and reload nginx.
-7. Clone repo to `/opt/boarding/repo`, create `/opt/boarding/backend.env` and `/opt/boarding/uploads`, run migrations.
-8. Build frontend with `NEXT_PUBLIC_API_URL=` empty.
+6. Clone repo to `/opt/boarding/repo` (so deploy files exist).
+7. nginx and HTTPS: copy deploy nginx config, reload nginx, run `certbot --nginx -d boarding.path2ai.tech` (section 5).
+8. Create `/opt/boarding/backend.env` and `/opt/boarding/uploads`, run migrations, build frontend with `NEXT_PUBLIC_API_URL=` empty.
 9. Install and start systemd units; verify `systemctl status` and `https://boarding.path2ai.tech/health`.
 
 After this, the site is reproducible from GitHub: clone, set env, run migrations, build frontend, start services. You can add the identity provider integration on this build once stable.
@@ -265,7 +272,7 @@ No changes to the Path-Boarding deployment in this doc are required for MCP; the
 | File | Purpose |
 |------|--------|
 | `deploy/setup-ec2.sh` | Base EC2: dnf update, Node, Python, nginx, certbot, dirs |
-| `deploy/nginx-boarding.path2ai.tech.conf` | nginx server block (API proxy + frontend proxy); adapt after Certbot |
+| `deploy/nginx-boarding.path2ai.tech.conf` | nginx server block (API + frontend proxy); Certbot adds HTTPS to it |
 | `deploy/systemd/path-boarding-backend.service` | gunicorn backend service |
 | `deploy/systemd/path-boarding-frontend.service` | Next.js frontend service |
 | `deploy/run-migrations.sh` | Run Alembic upgrade head (sources backend.env) |

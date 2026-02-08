@@ -20,6 +20,13 @@ dnf install -y nginx
 echo "==> Installing Certbot for nginx (Let's Encrypt)"
 dnf install -y certbot python3-certbot-nginx
 
+echo "==> Installing cronie (for certbot auto-renewal via cron)"
+dnf install -y cronie
+
+echo "==> Stopping and disabling httpd (Apache) if present (port 80/443 conflict)"
+systemctl stop httpd 2>/dev/null || true
+systemctl disable httpd 2>/dev/null || true
+
 echo "==> Creating app directories"
 mkdir -p /opt/boarding
 mkdir -p /opt/boarding/uploads
@@ -28,8 +35,9 @@ mkdir -p /var/log/boarding
 echo "==> Enabling nginx (start on boot)"
 systemctl enable nginx
 
-echo "==> Enabling certbot timer for renewal"
-systemctl enable certbot.timer
+echo "==> Enabling crond (start on boot)"
+systemctl enable crond
+systemctl start crond
 
 echo "==> Setup complete. Next steps:"
 echo "  1. Clone repo to /opt/boarding/repo"
