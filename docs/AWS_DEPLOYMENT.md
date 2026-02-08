@@ -77,16 +77,44 @@ Create RDS in the **same VPC** as the EC2 instance.
    - VPC security group: create or select one that allows **inbound 5432** from the **EC2 instance’s security group** only (no 0.0.0.0/0).
 
 3. **Additional**
-   - Initial database name: e.g. `boarding` (or match `DATABASE_URL`).
+   - Initial database name: leave blank or use `postgres` (the default). **Important:** You will create the application database manually later (see step 4 below).
    - Backup and maintenance window as needed.
 
 4. **After creation**
    - Note the **Endpoint** (hostname). Port is 5432.
-   - `DATABASE_URL` will be:  
-     `postgresql://USER:PASSWORD@ENDPOINT:5432/boarding`  
-     (replace USER, PASSWORD, ENDPOINT). No public access means the endpoint is only reachable from within the VPC (e.g. from EC2).
+   - Note the **Master username** and **Master password** you configured.
 
-You can create RDS **before** or **after** installing the app; run migrations (Alembic) **after** the app is installed and `.env` is set (see below).
+5. **Create the application database**
+
+   Once the RDS instance is running, connect from your EC2 instance and create the `boarding` database:
+
+   ```bash
+   # Install PostgreSQL client tools on EC2
+   sudo dnf install -y postgresql15
+   
+   # Connect to RDS (replace values with your RDS master credentials)
+   export RDSHOST="your-rds-endpoint.region.rds.amazonaws.com"
+   psql "host=$RDSHOST port=5432 dbname=postgres user=YOUR_MASTER_USERNAME sslmode=require"
+   ```
+   
+   When prompted, enter your RDS master password. Then in the psql prompt:
+   
+   ```sql
+   -- Create the application database
+   CREATE DATABASE boarding;
+   
+   -- Exit
+   \q
+   ```
+
+6. **Configure DATABASE_URL**
+   - Your `DATABASE_URL` (for backend `.env`) will be:  
+     `postgresql://USER:PASSWORD@ENDPOINT:5432/boarding`  
+     (replace USER, PASSWORD, ENDPOINT with your RDS master username, password, and endpoint).
+   - **Special characters in password**: If your password contains special characters like `!`, URL-encode them in the connection string (e.g., `!` becomes `%21`). Example: `Keywee50!` → `Keywee50%21`.
+   - No public access means the endpoint is only reachable from within the VPC (e.g. from EC2).
+
+You can create RDS **before** or **after** installing the app; run migrations (Alembic) **after** the database is created, app is installed, and `.env` is set (see section 6 below).
 
 ---
 
@@ -162,28 +190,37 @@ sudo nano /opt/boarding/backend.env
 
 Set at least:
 
-- `DATABASE_URL=postgresql://USER:PASSWORD@RDS_ENDPOINT:5432/boarding`
-- `SECRET_KEY=<long random string>`
-- `FRONTEND_BASE_URL=https://boarding.path2ai.tech`
-- `CORS_ORIGINS=` (empty for same-origin) or leave as-is if you keep defaults and nginx is same-origin
-- SMTP vars if you send email (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, etc.)
+- `DATABASE_URL="postgresql://USER:PASSWORD@RDS_ENDPOINT:5432/boarding"`
+  - **Important**: Wrap in double quotes. If password contains special characters (like `!`), URL-encode them (e.g., `!` → `%21`).
+  - Example: `DATABASE_URL="postgresql://boarding:Keywee50%21@boarding-db.cvkkcu0qiu9w.eu-west-2.rds.amazonaws.com:5432/boarding"`
+- `SECRET_KEY="<long random string>"` (wrap in quotes)
+- `FRONTEND_BASE_URL="https://boarding.path2ai.tech"`
+- `CORS_ORIGINS="[]"` (empty JSON array for same-origin; do NOT leave completely empty or unquoted)
+- SMTP vars if you send email (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, etc.) – wrap values with special chars in quotes
 - `ADDRESS_LOOKUP_UK_API_KEY` if you use UK address lookup
-- `UPLOAD_DIR=/opt/boarding/uploads` (and create the dir: `sudo mkdir -p /opt/boarding/uploads`)
+- `UPLOAD_DIR="/opt/boarding/uploads"` (and create the dir: `sudo mkdir -p /opt/boarding/uploads`)
+
+**Quoting rules**: Wrap values containing special characters, URLs, or spaces in **double quotes** (`"..."`). For `CORS_ORIGINS`, use `"[]"` not empty.
 
 Do not commit this file.
 
 6.3 **Backend venv and run migrations**
 
+**Prerequisites**: The `boarding` database must exist in RDS (see section 4 step 5).
+
 ```bash
 cd /opt/boarding/repo/backend
 sudo python3 -m venv /opt/boarding/venv
 sudo /opt/boarding/venv/bin/pip install -r requirements.txt
-# Load env and run migrations (RDS must be reachable)
+
+# Load env and run migrations (RDS must be reachable and database must exist)
 set -a && source /opt/boarding/backend.env && set +a
 /opt/boarding/venv/bin/alembic upgrade head
 ```
 
 Or use the script: `deploy/run-migrations.sh` (it should source `/opt/boarding/backend.env` and run alembic).
+
+If you see errors about missing database, go back to section 4 step 5 and create the `boarding` database first.
 
 6.4 **Frontend build (same-origin)**
 
