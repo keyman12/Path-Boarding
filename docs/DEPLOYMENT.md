@@ -35,6 +35,8 @@ Deploy so the frontend and backend are **same-origin** (no cross-origin requests
 
 If you must use different origins (e.g. `app.example.com` and `api.example.com`), set the backend `CORS_ORIGINS` to include the frontend origin (see [EMAIL_VERIFICATION_SETUP.md](EMAIL_VERIFICATION_SETUP.md) and backend `.env.example`).
 
+For a **step-by-step AWS deployment** (EC2 Amazon Linux, RDS PostgreSQL, nginx, Certbot, systemd, monitoring), see **[AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md)** and the `deploy/` scripts in the repo.
+
 ### UK address lookup (Ideal Postcodes)
 
 For the Personal Details step, UK users can look up addresses by postcode. The backend proxies [Ideal Postcodes](https://ideal-postcodes.co.uk/). Configure the backend with:

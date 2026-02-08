@@ -105,6 +105,7 @@ export default function BoardingEntryPage() {
   const [legalFirstNameError, setLegalFirstNameError] = useState<string | null>(null);
   const [legalLastNameError, setLegalLastNameError] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [personalDetailsSubmitting, setPersonalDetailsSubmitting] = useState(false);
 
   // Telephone: digits only, 10–15 digits (e.g. UK mobile 07943 490 548 = 11 digits)
   function validatePhoneNumber(value: string): string | null {
@@ -454,7 +455,7 @@ export default function BoardingEntryPage() {
     );
   }
 
-  function handlePersonalDetailsSubmit(e: React.FormEvent) {
+  async function handlePersonalDetailsSubmit(e: React.FormEvent) {
     e.preventDefault();
     setPersonalDetailsError(null);
     setDateOfBirthError(null);
@@ -506,6 +507,30 @@ export default function BoardingEntryPage() {
     if (phoneErr) {
       setPhoneError(phoneErr);
       setPersonalDetailsError(phoneErr);
+      return;
+    }
+    setPersonalDetailsSubmitting(true);
+    setPersonalDetailsError(null);
+    const line2 = addressLine2.trim();
+    const res = await apiPost<{ saved?: boolean }>(
+      `/boarding/step/2?token=${encodeURIComponent(token)}`,
+      {
+        legal_first_name: first,
+        legal_last_name: last,
+        date_of_birth: dob,
+        address_country: country,
+        address_postcode: country === "United Kingdom" ? postcode : undefined,
+        address_line1: line1,
+        address_line2: line2 || undefined,
+        address_town: town,
+        email: em,
+        phone_country_code: phoneCountryCode,
+        phone_number: phone,
+      }
+    );
+    setPersonalDetailsSubmitting(false);
+    if (res.error) {
+      setPersonalDetailsError(res.error);
       return;
     }
     setStep("step3");
@@ -815,9 +840,10 @@ export default function BoardingEntryPage() {
               )}
               <button
                 type="submit"
-                className="w-full px-6 py-3 bg-path-primary text-white rounded-lg font-medium hover:bg-path-primary-light-1 transition-colors"
+                disabled={personalDetailsSubmitting}
+                className="w-full px-6 py-3 bg-path-primary text-white rounded-lg font-medium hover:bg-path-primary-light-1 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
               >
-                Continue
+                {personalDetailsSubmitting ? "Saving..." : "Continue"}
               </button>
             </form>
           </div>

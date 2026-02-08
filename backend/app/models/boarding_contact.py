@@ -17,5 +17,16 @@ class BoardingContact(Base):
     email_verified_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    # Step 2 personal details
+    legal_first_name = Column(String(255), nullable=True)
+    legal_last_name = Column(String(255), nullable=True)
+    date_of_birth = Column(String(10), nullable=True)
+    address_country = Column(String(255), nullable=True)
+    address_postcode = Column(String(20), nullable=True)
+    address_line1 = Column(String(255), nullable=True)
+    address_line2 = Column(String(255), nullable=True)
+    address_town = Column(String(255), nullable=True)
+    phone_country_code = Column(String(10), nullable=True)
+    phone_number = Column(String(32), nullable=True)
 
     boarding_event = relationship("BoardingEvent", back_populates="contact")

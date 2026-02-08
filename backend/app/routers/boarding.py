@@ -24,6 +24,8 @@ from app.schemas.boarding import (
     InviteInfoPartner,
     Step1Submit,
     Step1Response,
+    Step2Submit,
+    Step2Response,
     VerifyEmailCodeSubmit,
     VerifyEmailResponse,
     VerifyStatusResponse,
@@ -232,6 +234,44 @@ def verify_email_code(
     vc.used_at = datetime.now(timezone.utc)
     _do_email_verified_flow(invite, event, contact, db)
     return VerifyEmailResponse(verified=True)
+
+
+@router.post("/step/2", response_model=Step2Response)
+def submit_step2(
+    token: str = Query(..., description="Invite token"),
+    body: Step2Submit = ...,
+    db: Session = Depends(get_db),
+):
+    """
+    Public: persist step 2 personal details. Requires completed step 1 and email verification.
+    """
+    invite = db.query(Invite).filter(Invite.token == token).first()
+    if not invite or invite.used_at or (invite.expires_at and invite.expires_at < datetime.now(timezone.utc)):
+        raise HTTPException(status_code=404, detail="Invalid or expired link")
+    event = db.query(BoardingEvent).filter(BoardingEvent.id == invite.boarding_event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Invalid link")
+    contact = db.query(BoardingContact).filter(BoardingContact.boarding_event_id == event.id).first()
+    if not contact:
+        raise HTTPException(status_code=400, detail="Complete step 1 first.")
+    if not contact.email_verified_at:
+        raise HTTPException(status_code=400, detail="Verify your email first.")
+    contact.legal_first_name = body.legal_first_name.strip()
+    contact.legal_last_name = body.legal_last_name.strip()
+    contact.date_of_birth = body.date_of_birth.strip()
+    contact.address_country = body.address_country.strip()
+    contact.address_postcode = (body.address_postcode or "").strip() or None
+    contact.address_line1 = body.address_line1.strip()
+    contact.address_line2 = (body.address_line2 or "").strip() or None
+    contact.address_town = body.address_town.strip()
+    contact.phone_country_code = body.phone_country_code.strip()
+    contact.phone_number = body.phone_number.strip()
+    if event.merchant_id:
+        merchant = db.query(Merchant).filter(Merchant.id == event.merchant_id).first()
+        if merchant:
+            merchant.legal_name = f"{contact.legal_first_name} {contact.legal_last_name}".strip()
+    db.commit()
+    return Step2Response()
 
 
 @router.post("/test-clear-email", response_model=TestClearEmailResponse)

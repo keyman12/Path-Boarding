@@ -1,0 +1,17 @@
+[Unit]
+Description=Path Boarding Frontend (Next.js)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/boarding/repo/frontend
+Environment=PORT=3000
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

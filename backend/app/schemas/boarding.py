@@ -46,3 +46,21 @@ class TestClearEmailSubmit(BaseModel):
 class TestClearEmailResponse(BaseModel):
     cleared: bool
     message: str
+
+
+class Step2Submit(BaseModel):
+    legal_first_name: str
+    legal_last_name: str
+    date_of_birth: str
+    address_country: str
+    address_postcode: Optional[str] = None
+    address_line1: str
+    address_line2: Optional[str] = None
+    address_town: str
+    email: EmailStr
+    phone_country_code: str
+    phone_number: str
+
+
+class Step2Response(BaseModel):
+    saved: bool = True

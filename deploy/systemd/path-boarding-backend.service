@@ -1,0 +1,21 @@
+[Unit]
+Description=Path Boarding API (FastAPI/gunicorn)
+After=network.target
+
+[Service]
+Type=notify
+User=root
+Group=root
+WorkingDirectory=/opt/boarding/repo/backend
+EnvironmentFile=/opt/boarding/backend.env
+ExecStart=/opt/boarding/venv/bin/gunicorn app.main:app \
+    --workers 2 \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --bind 127.0.0.1:8000 \
+    --access-logfile /var/log/boarding/backend-access.log \
+    --error-logfile /var/log/boarding/backend-error.log
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
