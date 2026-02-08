@@ -6,6 +6,8 @@ This guide deploys the Path Merchant Boarding app on a single EC2 instance (Amaz
 
 **GitHub repo:** [keyman12/Path-Boarding](https://github.com/keyman12/Path-Boarding)
 
+**📘 For deploying updates after initial setup, see [UPDATE_WORKFLOW.md](UPDATE_WORKFLOW.md)**
+
 ---
 
 ## 1. Architecture overview
