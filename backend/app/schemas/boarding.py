@@ -64,3 +64,15 @@ class Step2Submit(BaseModel):
 
 class Step2Response(BaseModel):
     saved: bool = True
+
+
+class BoardingLoginSubmit(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class BoardingLoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    current_step: Optional[str] = None
+    boarding_event_id: str

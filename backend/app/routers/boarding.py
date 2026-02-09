@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 from app.core.config import settings
 from app.core.deps import get_db
-from app.core.security import get_password_hash
+from app.core.security import get_password_hash, verify_password, create_access_token
 from app.models.boarding_contact import BoardingContact
 from app.models.boarding_event import BoardingEvent, BoardingStatus
 from app.models.invite import Invite
@@ -31,6 +31,8 @@ from app.schemas.boarding import (
     VerifyStatusResponse,
     TestClearEmailSubmit,
     TestClearEmailResponse,
+    BoardingLoginSubmit,
+    BoardingLoginResponse,
 )
 from app.services.email import send_verification_code_email
 
@@ -136,6 +138,7 @@ def submit_step1(
         boarding_event_id=event.id,
         email=body.email,
         hashed_password=get_password_hash(body.password),
+        current_step="verify",  # User needs to verify email next
     )
     db.add(contact)
     event.status = BoardingStatus.in_progress
@@ -160,6 +163,7 @@ def _do_email_verified_flow(
 ) -> None:
     """Mark contact verified, create merchant and merchant_user, advance to step 2."""
     contact.email_verified_at = datetime.now(timezone.utc)
+    contact.current_step = "step2"  # User can now proceed to personal details
     merchant = Merchant(
         id=str(uuid.uuid4()),
         partner_id=event.partner_id,
@@ -266,6 +270,7 @@ def submit_step2(
     contact.address_town = body.address_town.strip()
     contact.phone_country_code = body.phone_country_code.strip()
     contact.phone_number = body.phone_number.strip()
+    contact.current_step = "step3"  # User can now proceed to identity verification
     if event.merchant_id:
         merchant = db.query(Merchant).filter(Merchant.id == event.merchant_id).first()
         if merchant:
@@ -418,3 +423,38 @@ def address_lookup(
             status_code=502,
             detail="Could not load addresses. Please enter your address manually.",
         ) from e
+
+
+@router.post("/login", response_model=BoardingLoginResponse)
+def boarding_login(
+    body: BoardingLoginSubmit,
+    db: Session = Depends(get_db),
+):
+    """
+    Merchant boarding login: verify email/password and return JWT token.
+    Returns the user's current step so the frontend can navigate them to where they left off.
+    """
+    # Find boarding contact by email
+    contact = db.query(BoardingContact).filter(BoardingContact.email == body.email).first()
+    if not contact:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    # Verify password
+    if not verify_password(body.password, contact.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    # Check if email is verified
+    if not contact.email_verified_at:
+        raise HTTPException(status_code=403, detail="Please verify your email first")
+    
+    # Create JWT token with boarding_event_id as subject
+    access_token = create_access_token(
+        data={"sub": contact.boarding_event_id, "type": "boarding"}
+    )
+    
+    return BoardingLoginResponse(
+        access_token=access_token,
+        token_type="bearer",
+        current_step=contact.current_step or "step2",
+        boarding_event_id=contact.boarding_event_id,
+    )

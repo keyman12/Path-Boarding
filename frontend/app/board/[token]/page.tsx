@@ -554,11 +554,11 @@ export default function BoardingEntryPage() {
           </header>
           <div className="flex-1 max-w-md mx-auto w-full">
           <nav className="flex items-center flex-wrap gap-1 text-path-p2 text-path-grey-600 mb-6" aria-label="Breadcrumb">
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5 text-path-grey-400">
               <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
-                <Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125" />
+                <Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" />
               </span>
-              Verification
+              Account
             </span>
             <span className="mx-1 text-path-grey-400">/</span>
             <span className="flex items-center gap-1.5 font-medium text-path-primary">
@@ -572,7 +572,7 @@ export default function BoardingEntryPage() {
               <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
                 <Image src="/icons/form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain opacity-50" />
               </span>
-              Business Details
+              Verify
             </span>
           </nav>
             <h1 className="text-path-h2 font-poppins text-path-primary mb-2">Input your personal details</h1>
@@ -860,15 +860,16 @@ export default function BoardingEntryPage() {
     return (
       <div className="flex min-h-screen">
         <main className="flex-1 flex flex-col p-6 md:p-8 font-roboto bg-white text-path-grey-900">
-          <header className="flex items-center gap-4 mb-6">
+          <header className="flex items-center gap-4 mb-8">
             <Image src="/logo-path.png" alt="Path" width={140} height={40} />
           </header>
+          <div className="flex-1 max-w-md mx-auto w-full">
           <nav className="flex items-center flex-wrap gap-1 text-path-p2 text-path-grey-600 mb-6" aria-label="Breadcrumb">
             <span className="flex items-center gap-1.5 text-path-grey-400">
               <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
                 <Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" />
               </span>
-              Verification
+              Account
             </span>
             <span className="mx-1 text-path-grey-400">/</span>
             <span className="flex items-center gap-1.5 text-path-grey-400">
@@ -882,14 +883,37 @@ export default function BoardingEntryPage() {
               <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
                 <Image src="/icons/form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain" />
               </span>
-              Business Details
+              Verify
             </span>
           </nav>
-          <div className="flex-1 max-w-md mx-auto w-full">
-            <h1 className="text-path-h2 font-poppins text-path-primary mb-2">Business Details</h1>
-            <p className="text-path-p1 text-path-grey-700 mb-6">
-              This step will be built next. Personal details have been completed.
-            </p>
+            <h1 className="text-path-h2 font-poppins text-path-primary mb-4">Time to verify your identity</h1>
+            <div className="space-y-4 text-path-p1 text-path-grey-700">
+              <p>
+                In the next step, Path will ask you to take a photo of your passport or driving licence, 
+                followed by a selfie to confirm your identity.
+              </p>
+              <p className="font-medium text-path-grey-900">
+                Path will only have access to the results of this verification.
+              </p>
+              <p>
+                We partner with Sumsub to complete this process using biometric technology to confirm 
+                the documents and photos belong to you. You can delete your verification data at any time.
+              </p>
+              <p>
+                For more information on how your data is handled, please see the Path{" "}
+                <a href="#" className="text-path-primary hover:underline">Privacy Policy</a>.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                // TODO: Initialize SumSub verification
+                console.log("Starting identity verification...");
+                // For now, just log - we'll implement SumSub integration next
+              }}
+              className="w-full mt-8 bg-path-primary text-white py-3 px-4 rounded-lg font-medium hover:bg-path-primary-light-1 transition-colors"
+            >
+              Continue
+            </button>
           </div>
           <footer className="mt-12 pt-6 border-t border-path-grey-200 text-path-p2 text-path-grey-500 text-center">
             © 2026 Path2ai.tech
@@ -908,6 +932,28 @@ export default function BoardingEntryPage() {
         </header>
 
         <div className="flex-1 max-w-md mx-auto w-full">
+        <nav className="flex items-center flex-wrap gap-1 text-path-p2 text-path-grey-600 mb-6" aria-label="Breadcrumb">
+          <span className="flex items-center gap-1.5 font-medium text-path-primary">
+            <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
+              <Image src="/icons/form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain" />
+            </span>
+            Account
+          </span>
+          <span className="mx-1 text-path-grey-400">/</span>
+          <span className="flex items-center gap-1.5 text-path-grey-400">
+            <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
+              <Image src="/icons/form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain opacity-50" />
+            </span>
+            Personal Details
+          </span>
+          <span className="mx-1 text-path-grey-400">/</span>
+          <span className="flex items-center gap-1.5 text-path-grey-400">
+            <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
+              <Image src="/icons/form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain opacity-50" />
+            </span>
+            Verify
+          </span>
+        </nav>
         <h1 className="text-path-h2 font-poppins text-path-primary mb-2">Let&apos;s get started</h1>
         {inviteInfo.merchant_name ? (
           <p className="text-path-p1 text-path-grey-700 mb-6">
