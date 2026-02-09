@@ -26,6 +26,7 @@ from app.schemas.boarding import (
     Step1Response,
     Step2Submit,
     Step2Response,
+    SumsubTokenResponse,
     VerifyEmailCodeSubmit,
     VerifyEmailResponse,
     VerifyStatusResponse,
@@ -507,6 +508,98 @@ def save_for_later(
     return {
         "sent": True,
         "message": "Email sent successfully. You can return anytime within 14 days."
+    }
+
+
+@router.post("/sumsub/generate-token", response_model=SumsubTokenResponse)
+async def generate_sumsub_token(
+    token: str = Query(..., description="Invite token"),
+    db: Session = Depends(get_db),
+):
+    """
+    Public: Generate SumSub access token for identity verification.
+    Uses the boarding_event_id as the SumSub user_id.
+    """
+    from app.services.sumsub import generate_access_token
+    
+    # Verify the invite token
+    invite = db.query(Invite).filter(Invite.token == token).first()
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invalid or expired link")
+    
+    event = db.query(BoardingEvent).filter(BoardingEvent.id == invite.boarding_event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Invalid link")
+    
+    contact = db.query(BoardingContact).filter(BoardingContact.boarding_event_id == event.id).first()
+    if not contact:
+        raise HTTPException(status_code=400, detail="No account found. Please create an account first.")
+    
+    # Check if SumSub is configured
+    if not settings.SUMSUB_APP_TOKEN or not settings.SUMSUB_SECRET_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Identity verification is not configured. Please contact support."
+        )
+    
+    # Generate SumSub access token using boarding_event_id as user_id
+    try:
+        result = await generate_access_token(
+            user_id=event.id,
+            ttl_seconds=1200  # 20 minutes
+        )
+        
+        # Store the applicant ID in the database
+        contact.sumsub_applicant_id = event.id
+        contact.sumsub_verification_status = "pending"
+        db.commit()
+        
+        return SumsubTokenResponse(
+            token=result["token"],
+            user_id=result["userId"]
+        )
+    except Exception as e:
+        logger.error(f"Failed to generate SumSub token: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate verification token. Please try again."
+        )
+
+
+@router.post("/sumsub/complete")
+async def complete_sumsub_verification(
+    token: str = Query(..., description="Invite token"),
+    status: str = Query(..., description="Verification status: completed or rejected"),
+    db: Session = Depends(get_db),
+):
+    """
+    Public: Mark SumSub verification as complete.
+    Called from frontend after user completes verification flow.
+    """
+    # Verify the invite token
+    invite = db.query(Invite).filter(Invite.token == token).first()
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invalid or expired link")
+    
+    event = db.query(BoardingEvent).filter(BoardingEvent.id == invite.boarding_event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Invalid link")
+    
+    contact = db.query(BoardingContact).filter(BoardingContact.boarding_event_id == event.id).first()
+    if not contact:
+        raise HTTPException(status_code=400, detail="No account found.")
+    
+    # Update verification status
+    contact.sumsub_verification_status = status
+    if status == "completed":
+        contact.current_step = "step4"  # Move to next step (business info)
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "status": status,
+        "next_step": contact.current_step
     }
 
 

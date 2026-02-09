@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import SumsubWebSdk from "@sumsub/websdk-react";
 import { API_BASE, apiGet, apiPost } from "@/lib/api";
 
 type InviteInfo = {
@@ -145,6 +146,12 @@ export default function BoardingEntryPage() {
   const [showSaveForLaterModal, setShowSaveForLaterModal] = useState(false);
   const [saveForLaterLoading, setSaveForLaterLoading] = useState(false);
   const [saveForLaterSuccess, setSaveForLaterSuccess] = useState(false);
+
+  // SumSub identity verification
+  const [sumsubToken, setSumsubToken] = useState<string | null>(null);
+  const [sumsubLoading, setSumsubLoading] = useState(false);
+  const [sumsubError, setSumsubError] = useState<string | null>(null);
+  const [verificationStatus, setVerificationStatus] = useState<"pending" | "completed" | "rejected" | null>(null);
 
   // Telephone: digits only, 10–15 digits (e.g. UK mobile 07943 490 548 = 11 digits)
   function validatePhoneNumber(value: string): string | null {
@@ -580,6 +587,72 @@ export default function BoardingEntryPage() {
     } catch {
       alert("Failed to send email. Please try again.");
       setSaveForLaterLoading(false);
+    }
+  }
+
+  async function initializeSumSub() {
+    setSumsubLoading(true);
+    setSumsubError(null);
+    try {
+      const res = await apiPost<{ token: string; user_id: string }>(
+        `/boarding/sumsub/generate-token?token=${encodeURIComponent(token)}`,
+        {}
+      );
+      if (res.error) {
+        setSumsubError(res.error);
+        setSumsubLoading(false);
+        return;
+      }
+      setSumsubToken(res.data?.token || null);
+      setSumsubLoading(false);
+    } catch (err) {
+      setSumsubError("Failed to initialize verification. Please try again.");
+      setSumsubLoading(false);
+    }
+  }
+
+  function handleSumsubMessage(type: string, payload: any) {
+    console.log("SumSub message:", type, payload);
+    
+    if (type === "idCheck.onReady") {
+      // Verification widget loaded
+      console.log("SumSub widget ready");
+    }
+    
+    if (type === "idCheck.onApplicantSubmitted") {
+      // User completed the verification flow
+      console.log("User submitted verification");
+      handleVerificationComplete("completed");
+    }
+    
+    if (type === "idCheck.onError") {
+      // Verification encountered an error
+      console.error("SumSub error:", payload);
+      setSumsubError("Verification encountered an error. Please try again.");
+    }
+  }
+
+  async function handleVerificationComplete(status: "completed" | "rejected") {
+    try {
+      const res = await apiPost(
+        `/boarding/sumsub/complete?token=${encodeURIComponent(token)}&status=${status}`,
+        {}
+      );
+      if (res.error) {
+        console.error("Failed to update verification status:", res.error);
+        return;
+      }
+      
+      setVerificationStatus(status);
+      
+      if (status === "completed") {
+        // Move to next step after a short delay
+        setTimeout(() => {
+          setStep("step4");
+        }, 2000);
+      }
+    } catch (err) {
+      console.error("Failed to complete verification:", err);
     }
   }
 
@@ -1078,33 +1151,126 @@ export default function BoardingEntryPage() {
             </span>
           </nav>
             <h1 className="text-path-h2 font-poppins text-path-primary mb-4">Time to verify your identity</h1>
-            <div className="space-y-4 text-path-p1 text-path-grey-700">
-              <p>
-                In the next step, Path will ask you to take a photo of your passport or driving licence, 
-                followed by a selfie to confirm your identity.
-              </p>
-              <p className="font-medium text-path-grey-900">
-                Path will only have access to the results of this verification.
-              </p>
-              <p>
-                We partner with Sumsub to complete this process using biometric technology to confirm 
-                the documents and photos belong to you. You can delete your verification data at any time.
-              </p>
-              <p>
-                For more information on how your data is handled, please see the Path{" "}
-                <a href="#" className="text-path-primary hover:underline">Privacy Policy</a>.
-              </p>
-            </div>
-            <button
-              onClick={() => {
-                // TODO: Initialize SumSub verification
-                console.log("Starting identity verification...");
-                // For now, just log - we'll implement SumSub integration next
-              }}
-              className="w-full mt-8 bg-path-primary text-white py-3 px-4 rounded-lg font-medium hover:bg-path-primary-light-1 transition-colors"
-            >
-              Continue
-            </button>
+            
+            {!sumsubToken && !verificationStatus ? (
+              <>
+                <div className="space-y-4 text-path-p1 text-path-grey-700 mb-8">
+                  <p>
+                    In the next step, Path will ask you to take a photo of your passport or driving licence, 
+                    followed by a selfie to confirm your identity.
+                  </p>
+                  <p className="font-medium text-path-grey-900">
+                    Path will only have access to the results of this verification.
+                  </p>
+                  <p>
+                    We partner with Sumsub to complete this process using biometric technology to confirm 
+                    the documents and photos belong to you. You can delete your verification data at any time.
+                  </p>
+                  <p>
+                    For more information on how your data is handled, please see the Path{" "}
+                    <a href="#" className="text-path-primary hover:underline">Privacy Policy</a>.
+                  </p>
+                </div>
+                
+                {sumsubError && (
+                  <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-path-p2">
+                    {sumsubError}
+                  </div>
+                )}
+                
+                <button
+                  onClick={initializeSumSub}
+                  disabled={sumsubLoading}
+                  className="w-full bg-path-primary text-white py-3 px-4 rounded-lg font-medium hover:bg-path-primary-light-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {sumsubLoading ? "Loading..." : "Start Verification"}
+                </button>
+              </>
+            ) : verificationStatus === "completed" ? (
+              <div className="space-y-4">
+                <div className="p-6 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <h2 className="text-path-h3 font-poppins text-green-800">Verification Complete!</h2>
+                  </div>
+                  <p className="text-path-p1 text-green-700">
+                    Thank you for completing your identity verification. We're now processing your information.
+                  </p>
+                </div>
+                <p className="text-path-p2 text-path-grey-600 text-center">
+                  Redirecting to next step...
+                </p>
+              </div>
+            ) : verificationStatus === "rejected" ? (
+              <div className="space-y-4">
+                <div className="p-6 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center">
+                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </div>
+                    <h2 className="text-path-h3 font-poppins text-red-800">Verification Not Approved</h2>
+                  </div>
+                  <p className="text-path-p1 text-red-700 mb-4">
+                    Unfortunately, we were unable to verify your identity at this time. This could be due to:
+                  </p>
+                  <ul className="list-disc list-inside text-path-p2 text-red-700 space-y-1 mb-4">
+                    <li>Document quality issues</li>
+                    <li>Document expiration</li>
+                    <li>Photo clarity concerns</li>
+                  </ul>
+                  <p className="text-path-p2 text-red-700">
+                    Please contact support for assistance at{" "}
+                    <a href="mailto:support@path2ai.tech" className="text-red-800 underline">
+                      support@path2ai.tech
+                    </a>
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setVerificationStatus(null);
+                    setSumsubToken(null);
+                    setSumsubError(null);
+                  }}
+                  className="w-full bg-path-primary text-white py-3 px-4 rounded-lg font-medium hover:bg-path-primary-light-1 transition-colors"
+                >
+                  Try Again
+                </button>
+              </div>
+            ) : sumsubToken ? (
+              <div className="space-y-4">
+                <p className="text-path-p2 text-path-grey-600">
+                  Please complete the verification steps below:
+                </p>
+                <div className="border border-path-grey-200 rounded-lg overflow-hidden">
+                  <SumsubWebSdk
+                    accessToken={sumsubToken}
+                    expirationHandler={() => {
+                      console.log("Token expired, refreshing...");
+                      initializeSumSub();
+                    }}
+                    config={{
+                      lang: "en",
+                      theme: "light",
+                    }}
+                    options={{
+                      addViewportTag: false,
+                      adaptIframeHeight: true,
+                    }}
+                    onMessage={handleSumsubMessage}
+                    onError={(error: any) => {
+                      console.error("SumSub error:", error);
+                      setSumsubError("An error occurred during verification. Please try again.");
+                    }}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
           <footer className="mt-12 pt-6 border-t border-path-grey-200 text-path-p2 text-path-grey-500 text-center">
             © 2026 Path2ai.tech
@@ -1171,6 +1337,67 @@ export default function BoardingEntryPage() {
               )}
             </div>
           </div>
+        )}
+      </div>
+    );
+  }
+
+  if (step === "step4") {
+    return (
+      <div className="flex min-h-screen">
+        <main className="flex-1 flex flex-col p-6 md:p-8 font-roboto bg-white text-path-grey-900">
+          <header className="flex items-center gap-4 mb-8">
+            <Image src="/logo-path.png" alt="Path" width={140} height={40} />
+          </header>
+          <div className="flex-1 max-w-md mx-auto w-full">
+            <nav className="flex items-center flex-wrap gap-1 text-path-p2 text-path-grey-600 mb-6" aria-label="Breadcrumb">
+              <span className="flex items-center gap-1.5 text-path-grey-400">
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
+                  <Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" />
+                </span>
+                Account
+              </span>
+              <span className="mx-1 text-path-grey-400">/</span>
+              <span className="flex items-center gap-1.5 text-path-grey-400">
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
+                  <Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" />
+                </span>
+                Personal Details
+              </span>
+              <span className="mx-1 text-path-grey-400">/</span>
+              <span className="flex items-center gap-1.5 text-path-grey-400">
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
+                  <Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" />
+                </span>
+                Verify
+              </span>
+              <span className="mx-1 text-path-grey-400">/</span>
+              <span className="flex items-center gap-1.5 font-medium text-path-primary">
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
+                  <Image src="/icons/form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain" />
+                </span>
+                Business
+              </span>
+            </nav>
+            <h1 className="text-path-h2 font-poppins text-path-primary mb-4">Business Information</h1>
+            <p className="text-path-p1 text-path-grey-700 mb-8">
+              This is a placeholder for the business information collection form. 
+              We'll build this section next.
+            </p>
+          </div>
+          <footer className="mt-12 pt-6 border-t border-path-grey-200 text-path-p2 text-path-grey-500 text-center">
+            © 2026 Path2ai.tech
+          </footer>
+        </main>
+        {inviteInfo && (
+          <BoardingRightPanel 
+            partner={inviteInfo.partner}
+            onBack={{
+              label: "Verify Identity",
+              onClick: () => setStep("step3")
+            }}
+            onSaveForLater={() => setShowSaveForLaterModal(true)}
+          />
         )}
       </div>
     );

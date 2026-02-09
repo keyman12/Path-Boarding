@@ -30,5 +30,8 @@ class BoardingContact(Base):
     address_town = Column(String(255), nullable=True)
     phone_country_code = Column(String(10), nullable=True)
     phone_number = Column(String(32), nullable=True)
+    # Step 3 identity verification (SumSub)
+    sumsub_applicant_id = Column(String(255), nullable=True)  # SumSub applicant ID
+    sumsub_verification_status = Column(String(50), nullable=True)  # pending, completed, rejected
 
     boarding_event = relationship("BoardingEvent", back_populates="contact")

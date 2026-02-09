@@ -77,3 +77,8 @@ class BoardingLoginResponse(BaseModel):
     current_step: Optional[str] = None
     boarding_event_id: str
     invite_token: Optional[str] = None
+
+
+class SumsubTokenResponse(BaseModel):
+    token: str
+    user_id: str

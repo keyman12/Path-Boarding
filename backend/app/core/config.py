@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     # Add keys for other countries as needed, e.g. ADDRESS_LOOKUP_IE_API_KEY.
     ADDRESS_LOOKUP_UK_API_KEY: str = ""
 
+    # SumSub Identity Verification (required for production)
+    SUMSUB_APP_TOKEN: str = ""
+    SUMSUB_SECRET_KEY: str = ""
+    SUMSUB_BASE_URL: str = "https://api.sumsub.com"
+    SUMSUB_LEVEL_NAME: str = "basic-kyc-level"
+
     class Config:
         env_file = ".env"
         case_sensitive = True
