@@ -16,6 +16,7 @@ class BoardingContact(Base):
     hashed_password = Column(String(255), nullable=False)
     email_verified_at = Column(DateTime(timezone=True), nullable=True)
     current_step = Column(String(20), nullable=True, default="form")  # Tracks user progress: form, verify, step2, step3, done
+    invite_token = Column(String(255), nullable=True)  # Store invite token so user can resume later
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     # Step 2 personal details

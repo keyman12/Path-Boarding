@@ -76,3 +76,4 @@ class BoardingLoginResponse(BaseModel):
     token_type: str = "bearer"
     current_step: Optional[str] = None
     boarding_event_id: str
+    invite_token: Optional[str] = None

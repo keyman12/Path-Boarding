@@ -19,7 +19,12 @@ export default function BoardingLoginPage() {
     setLoading(true);
 
     try {
-      const res = await apiPost<{ access_token: string; current_step?: string; boarding_event_id: string }>(
+      const res = await apiPost<{ 
+        access_token: string; 
+        current_step?: string; 
+        boarding_event_id: string;
+        invite_token?: string;
+      }>(
         "/boarding/login",
         { email, password }
       );
@@ -35,11 +40,12 @@ export default function BoardingLoginPage() {
         localStorage.setItem("boarding_token", res.data.access_token);
         localStorage.setItem("boarding_event_id", res.data.boarding_event_id);
         
-        // Navigate to the user's current step
-        const step = res.data.current_step || "step2";
-        // For now, we'll need an invite token to navigate
-        // TODO: Store invite token or redirect to a token-less boarding page
-        router.push(`/board?step=${step}`);
+        // Navigate back to their boarding page with the stored invite token
+        if (res.data.invite_token) {
+          router.push(`/board/${res.data.invite_token}`);
+        } else {
+          setError("Unable to resume boarding. Please contact support.");
+        }
       }
     } catch (err) {
       setError("Something went wrong. Please try again.");

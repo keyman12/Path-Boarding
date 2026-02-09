@@ -139,6 +139,7 @@ def submit_step1(
         email=body.email,
         hashed_password=get_password_hash(body.password),
         current_step="verify",  # User needs to verify email next
+        invite_token=token,  # Store token so user can resume later
     )
     db.add(contact)
     event.status = BoardingStatus.in_progress
@@ -457,4 +458,5 @@ def boarding_login(
         token_type="bearer",
         current_step=contact.current_step or "step2",
         boarding_event_id=contact.boarding_event_id,
+        invite_token=contact.invite_token,
     )
