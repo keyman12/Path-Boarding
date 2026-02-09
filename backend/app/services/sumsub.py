@@ -86,25 +86,46 @@ async def generate_access_token(
     Raises:
         httpx.HTTPError: If the request fails
     """
-    level = level_name or settings.SUMSUB_LEVEL_NAME
-    path = "/resources/accessTokens?userId=" + user_id + "&levelName=" + level
+    import json
+    from urllib.parse import urlencode
     
+    level = level_name or settings.SUMSUB_LEVEL_NAME
+    
+    # Build query parameters
+    params = {
+        "userId": user_id,
+        "levelName": level
+    }
+    query_string = urlencode(params)
+    path = f"/resources/accessTokens?{query_string}"
+    
+    # Body (JSON)
     body = {
         "ttlInSecs": ttl_seconds,
         "userId": user_id,
         "levelName": level
     }
-    
-    import json
     body_bytes = json.dumps(body).encode()
     
     headers = _get_headers("POST", path, body_bytes)
-    url = settings.SUMSUB_BASE_URL + path
+    url = f"{settings.SUMSUB_BASE_URL}{path}"
     
-    async with httpx.AsyncClient() as client:
-        response = await client.post(url, headers=headers, content=body_bytes)
-        response.raise_for_status()
-        return response.json()
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, headers=headers, content=body_bytes)
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPStatusError as e:
+        # Log the response for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"SumSub API error: {e.response.status_code} - {e.response.text}")
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"SumSub request failed: {str(e)}")
+        raise
 
 
 async def get_applicant_status(user_id: str) -> Dict[str, Any]:

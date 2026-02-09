@@ -544,6 +544,7 @@ async def generate_sumsub_token(
     
     # Generate SumSub access token using boarding_event_id as user_id
     try:
+        logger.info(f"Generating SumSub token for user_id={event.id}, level={settings.SUMSUB_LEVEL_NAME}")
         result = await generate_access_token(
             user_id=event.id,
             ttl_seconds=1200  # 20 minutes
@@ -554,15 +555,22 @@ async def generate_sumsub_token(
         contact.sumsub_verification_status = "pending"
         db.commit()
         
+        logger.info(f"Successfully generated SumSub token for user_id={event.id}")
         return SumsubTokenResponse(
             token=result["token"],
             user_id=result["userId"]
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Failed to generate SumSub token: {e}")
+        logger.error(f"Failed to generate SumSub token: {type(e).__name__}: {str(e)}", exc_info=True)
+        # Return more specific error message if available
+        error_detail = "Failed to generate verification token. Please try again."
+        if hasattr(e, 'response') and hasattr(e.response, 'text'):
+            error_detail = f"SumSub API error: {e.response.text}"
         raise HTTPException(
             status_code=500,
-            detail="Failed to generate verification token. Please try again."
+            detail=error_detail
         )
 
 
