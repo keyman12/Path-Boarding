@@ -90,3 +90,91 @@ def send_verification_code_email(to_email: str, code: str, expire_minutes: int =
     except Exception as e:
         logger.exception("Failed to send verification email to %s: %s", to_email, e)
         return False
+
+
+def send_save_for_later_email(to_email: str, user_name: str) -> bool:
+    """
+    Send 'save for later' email with link to login page.
+    Returns True if sent, False if SMTP not configured or send failed.
+    """
+    if not settings.SMTP_HOST or not settings.SMTP_USER:
+        logger.warning("SMTP not configured (SMTP_HOST/SMTP_USER). Skipping send.")
+        return False
+
+    logo_url = _logo_url()
+    login_url = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/board"
+    
+    subject = "Continue your Path Boarding application"
+    html = f"""
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+  <p style="margin-bottom: 24px;">
+    <img src="{logo_url}" alt="Path" width="140" height="40" style="display: block;" />
+  </p>
+  <p style="font-size: 16px; color: #1a1a1a; line-height: 1.5;">
+    Dear {user_name},
+  </p>
+  <p style="font-size: 16px; color: #1a1a1a; line-height: 1.5; margin-top: 16px;">
+    Your progress has been saved. You can return at any time within the next 14 days to complete your Path financial services application.
+  </p>
+  <p style="margin: 24px 0;">
+    <a href="{login_url}" style="display: inline-block; padding: 12px 24px; background-color: #297D2D; color: white; text-decoration: none; border-radius: 6px; font-weight: 500;">
+      Continue Boarding
+    </a>
+  </p>
+  <p style="font-size: 14px; color: #737373; margin-top: 24px;">
+    If you have any questions, please don't hesitate to reach out.
+  </p>
+  <p style="font-size: 14px; color: #1a1a1a; margin-top: 24px;">
+    Sincerely,<br/>
+    The Path Team
+  </p>
+  <p style="font-size: 12px; color: #a3a3a3; margin-top: 32px;">
+    Path2ai.tech
+  </p>
+</body>
+</html>
+"""
+    text = f"""
+Dear {user_name},
+
+Your progress has been saved. You can return at any time within the next 14 days to complete your Path financial services application.
+
+Please use the link below to continue your boarding:
+{login_url}
+
+If you have any questions, please don't hesitate to reach out.
+
+Sincerely,
+The Path Team
+
+Path2ai.tech
+"""
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
+    msg["To"] = to_email
+    msg.attach(MIMEText(text, "plain"))
+    msg.attach(MIMEText(html, "html"))
+
+    try:
+        with smtplib.SMTP(
+            settings.SMTP_HOST, settings.SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS
+        ) as server:
+            server.starttls()
+            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            server.sendmail(settings.SMTP_FROM_EMAIL, [to_email], msg.as_string())
+        logger.info("Save for later email sent to %s", to_email)
+        return True
+    except smtplib.SMTPAuthenticationError as e:
+        logger.exception("SMTP login failed for %s: %s", to_email, e)
+        return False
+    except (OSError, TimeoutError) as e:
+        logger.exception("SMTP connection error (timeout or network) for %s: %s", to_email, e)
+        return False
+    except Exception as e:
+        logger.exception("Failed to send save for later email to %s: %s", to_email, e)
+        return False

@@ -34,7 +34,7 @@ from app.schemas.boarding import (
     BoardingLoginSubmit,
     BoardingLoginResponse,
 )
-from app.services.email import send_verification_code_email
+from app.services.email import send_verification_code_email, send_save_for_later_email
 
 router = APIRouter()
 
@@ -469,6 +469,45 @@ def address_lookup(
             status_code=502,
             detail="Could not load addresses. Please enter your address manually.",
         ) from e
+
+
+@router.post("/save-for-later")
+def save_for_later(
+    token: str = Query(..., description="Invite token"),
+    db: Session = Depends(get_db),
+):
+    """
+    Public: send 'save for later' email to the user.
+    Sends an email with a link to the login page so they can resume their boarding.
+    """
+    invite = db.query(Invite).filter(Invite.token == token).first()
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invalid or expired link")
+    
+    event = db.query(BoardingEvent).filter(BoardingEvent.id == invite.boarding_event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Invalid link")
+    
+    contact = db.query(BoardingContact).filter(BoardingContact.boarding_event_id == event.id).first()
+    if not contact:
+        raise HTTPException(status_code=400, detail="No account found. Please create an account first.")
+    
+    # Get user's name for personalization
+    user_name = contact.legal_first_name or "there"
+    
+    # Send email
+    sent = send_save_for_later_email(contact.email, user_name)
+    
+    if not sent:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to send email. Please check SMTP configuration."
+        )
+    
+    return {
+        "sent": True,
+        "message": "Email sent successfully. You can return anytime within 14 days."
+    }
 
 
 @router.post("/login", response_model=BoardingLoginResponse)

@@ -15,10 +15,12 @@ type InviteInfo = {
 
 function BoardingRightPanel({ 
   partner, 
-  onBack 
+  onBack,
+  onSaveForLater
 }: { 
   partner: { name: string; logo_url?: string | null };
   onBack?: { label: string; onClick: () => void; isForward?: boolean };
+  onSaveForLater?: () => void;
 }) {
   const [logoError, setLogoError] = useState(false);
   const logoUrl = partner.logo_url
@@ -59,6 +61,14 @@ function BoardingRightPanel({
                 <span>Return to {onBack.label}</span>
               </>
             )}
+          </button>
+        )}
+        {onSaveForLater && (
+          <button
+            onClick={onSaveForLater}
+            className="mt-4 text-path-p2 text-white/90 hover:text-white transition-colors underline"
+          >
+            Save for later
           </button>
         )}
       </div>
@@ -130,6 +140,11 @@ export default function BoardingEntryPage() {
   const [legalLastNameError, setLegalLastNameError] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [personalDetailsSubmitting, setPersonalDetailsSubmitting] = useState(false);
+
+  // Save for later modal
+  const [showSaveForLaterModal, setShowSaveForLaterModal] = useState(false);
+  const [saveForLaterLoading, setSaveForLaterLoading] = useState(false);
+  const [saveForLaterSuccess, setSaveForLaterSuccess] = useState(false);
 
   // Telephone: digits only, 10–15 digits (e.g. UK mobile 07943 490 548 = 11 digits)
   function validatePhoneNumber(value: string): string | null {
@@ -950,12 +965,60 @@ export default function BoardingEntryPage() {
         {inviteInfo && (
           <BoardingRightPanel 
             partner={inviteInfo.partner}
-            onBack={{
-              label: "Verify",
-              onClick: handlePersonalDetailsSubmit,
-              isForward: true
-            }}
+            onSaveForLater={() => setShowSaveForLaterModal(true)}
           />
+        )}
+        
+        {/* Save for Later Modal */}
+        {showSaveForLaterModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full">
+              {!saveForLaterSuccess ? (
+                <>
+                  <h2 className="text-path-h3 font-poppins text-path-primary mb-4">Save for later</h2>
+                  <p className="text-path-p1 text-path-grey-700 mb-4">
+                    Your progress has been saved and is available for the next 14 days for you to return and complete.
+                  </p>
+                  <p className="text-path-p1 text-path-grey-700 mb-6">
+                    We'll send an email to your email address with a link that will take you to the merchant boarding login screen.
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setShowSaveForLaterModal(false)}
+                      className="flex-1 px-4 py-2 border border-path-grey-300 rounded-lg text-path-grey-700 hover:bg-path-grey-100 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveForLater}
+                      disabled={saveForLaterLoading}
+                      className="flex-1 px-4 py-2 bg-path-primary text-white rounded-lg hover:bg-path-primary-light-1 transition-colors disabled:opacity-50"
+                    >
+                      {saveForLaterLoading ? "Sending..." : "Continue"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-path-h3 font-poppins text-path-primary mb-4">Email sent!</h2>
+                  <p className="text-path-p1 text-path-grey-700 mb-6">
+                    We've sent a link to your email address. You can use it to return and complete your boarding anytime within the next 14 days.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setShowSaveForLaterModal(false);
+                      setSaveForLaterSuccess(false);
+                      // Optional: redirect to home or show a thank you page
+                      window.location.href = "/";
+                    }}
+                    className="w-full px-4 py-2 bg-path-primary text-white rounded-lg hover:bg-path-primary-light-1 transition-colors"
+                  >
+                    Close
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
         )}
       </div>
     );
@@ -1034,7 +1097,60 @@ export default function BoardingEntryPage() {
               label: "Personal Details",
               onClick: () => setStep("step2")
             }}
+            onSaveForLater={() => setShowSaveForLaterModal(true)}
           />
+        )}
+        
+        {/* Save for Later Modal */}
+        {showSaveForLaterModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full">
+              {!saveForLaterSuccess ? (
+                <>
+                  <h2 className="text-path-h3 font-poppins text-path-primary mb-4">Save for later</h2>
+                  <p className="text-path-p1 text-path-grey-700 mb-4">
+                    Your progress has been saved and is available for the next 14 days for you to return and complete.
+                  </p>
+                  <p className="text-path-p1 text-path-grey-700 mb-6">
+                    We'll send an email to your email address with a link that will take you to the merchant boarding login screen.
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setShowSaveForLaterModal(false)}
+                      className="flex-1 px-4 py-2 border border-path-grey-300 rounded-lg text-path-grey-700 hover:bg-path-grey-100 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveForLater}
+                      disabled={saveForLaterLoading}
+                      className="flex-1 px-4 py-2 bg-path-primary text-white rounded-lg hover:bg-path-primary-light-1 transition-colors disabled:opacity-50"
+                    >
+                      {saveForLaterLoading ? "Sending..." : "Continue"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-path-h3 font-poppins text-path-primary mb-4">Email sent!</h2>
+                  <p className="text-path-p1 text-path-grey-700 mb-6">
+                    We've sent a link to your email address. You can use it to return and complete your boarding anytime within the next 14 days.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setShowSaveForLaterModal(false);
+                      setSaveForLaterSuccess(false);
+                      // Optional: redirect to home or show a thank you page
+                      window.location.href = "/";
+                    }}
+                    className="w-full px-4 py-2 bg-path-primary text-white rounded-lg hover:bg-path-primary-light-1 transition-colors"
+                  >
+                    Close
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
         )}
       </div>
     );
