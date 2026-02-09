@@ -13,7 +13,13 @@ type InviteInfo = {
   valid: boolean;
 };
 
-function BoardingRightPanel({ partner }: { partner: { name: string; logo_url?: string | null } }) {
+function BoardingRightPanel({ 
+  partner, 
+  onBack 
+}: { 
+  partner: { name: string; logo_url?: string | null };
+  onBack?: { label: string; onClick: () => void };
+}) {
   const [logoError, setLogoError] = useState(false);
   const logoUrl = partner.logo_url
     ? `${API_BASE.replace(/\/$/, "")}${partner.logo_url.startsWith("/") ? "" : "/"}${partner.logo_url}`
@@ -37,6 +43,15 @@ function BoardingRightPanel({ partner }: { partner: { name: string; logo_url?: s
         <p className="text-xl font-poppins leading-snug">
           {partner.name} partners with Path for secure financial services.
         </p>
+        {onBack && (
+          <button
+            onClick={onBack.onClick}
+            className="mt-6 flex items-center gap-2 text-path-p2 text-white/90 hover:text-white transition-colors"
+          >
+            <span>←</span>
+            <span>Return to {onBack.label}</span>
+          </button>
+        )}
       </div>
       <div className="flex-1 min-h-0" />
       <nav className="flex flex-col gap-2 text-path-p2 text-white/90 pt-8">
@@ -623,12 +638,15 @@ export default function BoardingEntryPage() {
           </header>
           <div className="flex-1 max-w-md mx-auto w-full">
           <nav className="flex items-center flex-wrap gap-1 text-path-p2 text-path-grey-600 mb-6" aria-label="Breadcrumb">
-            <span className="flex items-center gap-1.5 text-path-grey-400">
+            <button
+              onClick={() => setStep("form")}
+              className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer"
+            >
               <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
                 <Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" />
               </span>
               Account
-            </span>
+            </button>
             <span className="mx-1 text-path-grey-400">/</span>
             <span className="flex items-center gap-1.5 font-medium text-path-primary">
               <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
@@ -920,7 +938,15 @@ export default function BoardingEntryPage() {
             © 2026 Path2ai.tech
           </footer>
         </main>
-        {inviteInfo && <BoardingRightPanel partner={inviteInfo.partner} />}
+        {inviteInfo && (
+          <BoardingRightPanel 
+            partner={inviteInfo.partner}
+            onBack={{
+              label: "Account",
+              onClick: () => setStep("form")
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -934,19 +960,25 @@ export default function BoardingEntryPage() {
           </header>
           <div className="flex-1 max-w-md mx-auto w-full">
           <nav className="flex items-center flex-wrap gap-1 text-path-p2 text-path-grey-600 mb-6" aria-label="Breadcrumb">
-            <span className="flex items-center gap-1.5 text-path-grey-400">
+            <button
+              onClick={() => setStep("form")}
+              className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer"
+            >
               <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
                 <Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" />
               </span>
               Account
-            </span>
+            </button>
             <span className="mx-1 text-path-grey-400">/</span>
-            <span className="flex items-center gap-1.5 text-path-grey-400">
+            <button
+              onClick={() => setStep("step2")}
+              className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer"
+            >
               <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
                 <Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" />
               </span>
               Personal Details
-            </span>
+            </button>
             <span className="mx-1 text-path-grey-400">/</span>
             <span className="flex items-center gap-1.5 font-medium text-path-primary">
               <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
@@ -988,7 +1020,15 @@ export default function BoardingEntryPage() {
             © 2026 Path2ai.tech
           </footer>
         </main>
-        {inviteInfo && <BoardingRightPanel partner={inviteInfo.partner} />}
+        {inviteInfo && (
+          <BoardingRightPanel 
+            partner={inviteInfo.partner}
+            onBack={{
+              label: "Personal Details",
+              onClick: () => setStep("step2")
+            }}
+          />
+        )}
       </div>
     );
   }
