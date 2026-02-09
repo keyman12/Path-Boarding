@@ -70,7 +70,8 @@ def _get_headers(method: str, path: str, body: bytes = b"") -> Dict[str, str]:
 async def generate_access_token(
     user_id: str,
     level_name: Optional[str] = None,
-    ttl_seconds: int = 600
+    ttl_seconds: int = 600,
+    external_user_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Generate a SumSub access token for an applicant.
@@ -79,6 +80,7 @@ async def generate_access_token(
         user_id: Unique identifier for the user (e.g. boarding_event_id)
         level_name: SumSub verification level (defaults to SUMSUB_LEVEL_NAME)
         ttl_seconds: Token time-to-live in seconds (default 600 = 10 minutes)
+        external_user_id: Optional external user ID (if different from user_id)
     
     Returns:
         Dict with 'token' and 'userId' fields
@@ -87,12 +89,14 @@ async def generate_access_token(
         httpx.HTTPError: If the request fails
     """
     from urllib.parse import urlencode
+    import logging
+    logger = logging.getLogger(__name__)
     
     level = level_name or settings.SUMSUB_LEVEL_NAME
     
     # Build query parameters - all params go in the query string, not body
     params = {
-        "userId": user_id,
+        "userId": external_user_id or user_id,
         "levelName": level,
         "ttlInSecs": str(ttl_seconds)
     }
@@ -103,20 +107,22 @@ async def generate_access_token(
     headers = _get_headers("POST", path, b"")
     url = f"{settings.SUMSUB_BASE_URL}{path}"
     
+    logger.info(f"Requesting SumSub token: URL={url}")
+    logger.info(f"Request headers: {headers}")
+    
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(url, headers=headers)
+            logger.info(f"SumSub response status: {response.status_code}")
             response.raise_for_status()
-            return response.json()
+            result = response.json()
+            logger.info(f"SumSub token generated successfully for userId={params['userId']}")
+            return result
     except httpx.HTTPStatusError as e:
         # Log the response for debugging
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"SumSub API error: {e.response.status_code} - {e.response.text}")
         raise
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"SumSub request failed: {str(e)}")
         raise
 
