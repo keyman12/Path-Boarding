@@ -563,8 +563,28 @@ export default function BoardingEntryPage() {
     );
   }
 
-  async function handlePersonalDetailsSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSaveForLater() {
+    setSaveForLaterLoading(true);
+    try {
+      const res = await apiPost<{ sent: boolean; message: string }>(
+        `/boarding/save-for-later?token=${encodeURIComponent(token)}`,
+        {}
+      );
+      if (res.error) {
+        alert(res.error);
+        setSaveForLaterLoading(false);
+        return;
+      }
+      setSaveForLaterSuccess(true);
+      setSaveForLaterLoading(false);
+    } catch {
+      alert("Failed to send email. Please try again.");
+      setSaveForLaterLoading(false);
+    }
+  }
+
+  async function handlePersonalDetailsSubmit(e?: React.FormEvent) {
+    if (e) e.preventDefault();
     setPersonalDetailsError(null);
     setDateOfBirthError(null);
     setLegalFirstNameError(null);
