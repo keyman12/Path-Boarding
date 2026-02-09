@@ -42,6 +42,51 @@ router = APIRouter()
 VERIFY_CODE_EXPIRE_MINUTES = 15
 
 
+@router.get("/saved-data")
+def get_saved_data(
+    token: str = Query(..., description="Invite token from boarding URL"),
+    db: Session = Depends(get_db),
+):
+    """
+    Public: get saved boarding data for the contact (if any exists).
+    Returns the saved personal details and current step so the frontend can pre-populate forms.
+    """
+    invite = db.query(Invite).filter(Invite.token == token).first()
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invalid or expired link")
+    
+    event = db.query(BoardingEvent).filter(BoardingEvent.id == invite.boarding_event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Invalid link")
+    
+    contact = db.query(BoardingContact).filter(BoardingContact.boarding_event_id == event.id).first()
+    if not contact:
+        return {
+            "has_data": False,
+            "current_step": None,
+            "email": None,
+            "email_verified": False,
+        }
+    
+    return {
+        "has_data": True,
+        "current_step": contact.current_step,
+        "email": contact.email,
+        "email_verified": contact.email_verified_at is not None,
+        # Step 2 personal details
+        "legal_first_name": contact.legal_first_name,
+        "legal_last_name": contact.legal_last_name,
+        "date_of_birth": contact.date_of_birth,
+        "address_country": contact.address_country,
+        "address_postcode": contact.address_postcode,
+        "address_line1": contact.address_line1,
+        "address_line2": contact.address_line2,
+        "address_town": contact.address_town,
+        "phone_country_code": contact.phone_country_code,
+        "phone_number": contact.phone_number,
+    }
+
+
 @router.get("/invite-info", response_model=InviteInfoResponse)
 def get_invite_info(
     token: str = Query(..., description="Invite token from the boarding URL"),

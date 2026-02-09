@@ -248,21 +248,90 @@ export default function BoardingEntryPage() {
     };
   }, [token]);
 
-  // If user already verified (e.g. refreshed), show done
+  // Load saved data and pre-populate forms
   useEffect(() => {
     if (!token || !inviteInfo) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await apiGet<{ verified: boolean }>(`/boarding/verify-status?token=${encodeURIComponent(token)}`);
+        const res = await apiGet<{
+          has_data: boolean;
+          current_step?: string;
+          email?: string;
+          email_verified: boolean;
+          legal_first_name?: string;
+          legal_last_name?: string;
+          date_of_birth?: string;
+          address_country?: string;
+          address_postcode?: string;
+          address_line1?: string;
+          address_line2?: string;
+          address_town?: string;
+          phone_country_code?: string;
+          phone_number?: string;
+        }>(`/boarding/saved-data?token=${encodeURIComponent(token)}`);
         if (cancelled) return;
-        if (res.data?.verified) {
-          setEmailPersonal(email);
-          if (email && isValidEmail(email)) setVerifiedFields((f) => ({ ...f, email: true }));
-          setStep("step2");
+        if (res.data?.has_data) {
+          // Pre-populate email from step 1
+          if (res.data.email) {
+            setEmail(res.data.email);
+            setEmailPersonal(res.data.email);
+            if (isValidEmail(res.data.email)) {
+              setStep1VerifiedFields((f) => ({ ...f, email: true }));
+              setVerifiedFields((f) => ({ ...f, email: true }));
+            }
+          }
+          
+          // Pre-populate step 2 personal details
+          if (res.data.legal_first_name) {
+            setLegalFirstName(res.data.legal_first_name);
+            setVerifiedFields((f) => ({ ...f, legalFirst: true }));
+          }
+          if (res.data.legal_last_name) {
+            setLegalLastName(res.data.legal_last_name);
+            setVerifiedFields((f) => ({ ...f, legalLast: true }));
+          }
+          if (res.data.date_of_birth) {
+            setDateOfBirth(res.data.date_of_birth);
+            setVerifiedFields((f) => ({ ...f, dob: true }));
+          }
+          if (res.data.address_country) {
+            setAddressCountry(res.data.address_country);
+            setVerifiedFields((f) => ({ ...f, country: true }));
+          }
+          if (res.data.address_postcode) {
+            setAddressPostcode(res.data.address_postcode);
+            setVerifiedFields((f) => ({ ...f, postcode: true }));
+          }
+          if (res.data.address_line1) {
+            setAddressLine1(res.data.address_line1);
+            setVerifiedFields((f) => ({ ...f, line1: true }));
+          }
+          if (res.data.address_line2) {
+            setAddressLine2(res.data.address_line2);
+            setVerifiedFields((f) => ({ ...f, line2: true }));
+          }
+          if (res.data.address_town) {
+            setAddressTown(res.data.address_town);
+            setVerifiedFields((f) => ({ ...f, town: true }));
+          }
+          if (res.data.phone_country_code) {
+            setPhoneCountryCode(res.data.phone_country_code);
+          }
+          if (res.data.phone_number) {
+            setPhoneNumber(res.data.phone_number);
+            setVerifiedFields((f) => ({ ...f, phone: true }));
+          }
+          
+          // Navigate to the correct step based on current_step
+          if (res.data.email_verified && res.data.current_step) {
+            setStep(res.data.current_step as any);
+          } else if (res.data.email_verified) {
+            setStep("step2");
+          }
         }
       } catch {
-        // ignore
+        // ignore - user might not have saved data yet
       }
     })();
     return () => {
