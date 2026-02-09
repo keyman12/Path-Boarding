@@ -18,7 +18,7 @@ function BoardingRightPanel({
   onBack 
 }: { 
   partner: { name: string; logo_url?: string | null };
-  onBack?: { label: string; onClick: () => void };
+  onBack?: { label: string; onClick: () => void; isForward?: boolean };
 }) {
   const [logoError, setLogoError] = useState(false);
   const logoUrl = partner.logo_url
@@ -48,8 +48,17 @@ function BoardingRightPanel({
             onClick={onBack.onClick}
             className="mt-6 flex items-center gap-2 text-path-p2 text-white/90 hover:text-white transition-colors"
           >
-            <span>←</span>
-            <span>Return to {onBack.label}</span>
+            {onBack.isForward ? (
+              <>
+                <span>Continue to {onBack.label}</span>
+                <span>→</span>
+              </>
+            ) : (
+              <>
+                <span>←</span>
+                <span>Return to {onBack.label}</span>
+              </>
+            )}
           </button>
         )}
       </div>
@@ -652,12 +661,15 @@ export default function BoardingEntryPage() {
               Personal Details
             </span>
             <span className="mx-1 text-path-grey-400">/</span>
-            <span className="flex items-center gap-1.5 text-path-grey-400">
+            <button
+              onClick={handlePersonalDetailsSubmit}
+              className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer"
+            >
               <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
                 <Image src="/icons/form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain opacity-50" />
               </span>
               Verify
-            </span>
+            </button>
           </nav>
             <h1 className="text-path-h2 font-poppins text-path-primary mb-2">Input your personal details</h1>
             <p className="text-path-p1 text-path-grey-700 mb-6">
@@ -935,7 +947,16 @@ export default function BoardingEntryPage() {
             © 2026 Path2ai.tech
           </footer>
         </main>
-        {inviteInfo && <BoardingRightPanel partner={inviteInfo.partner} />}
+        {inviteInfo && (
+          <BoardingRightPanel 
+            partner={inviteInfo.partner}
+            onBack={{
+              label: "Verify",
+              onClick: handlePersonalDetailsSubmit,
+              isForward: true
+            }}
+          />
+        )}
       </div>
     );
   }
