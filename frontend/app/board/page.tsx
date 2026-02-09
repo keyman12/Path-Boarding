@@ -48,28 +48,28 @@ export default function BoardingLoginPage() {
         }
       }
     } catch (err) {
-      setError("Something went wrong. Please try again.");
+      console.error("Login error:", err);
+      const errorMessage = err instanceof Error ? err.message : "Something went wrong. Please try again.";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen flex font-roboto bg-white">
-      {/* Left column - Login form */}
-      <main className="flex-1 flex flex-col p-6 md:p-8">
-        <header className="mb-8">
-          <Image
-            src="/logo-path.png"
-            alt="Path"
-            width={140}
-            height={40}
-            priority
-          />
-        </header>
+    <div className="min-h-screen flex flex-col font-roboto bg-white p-6 md:p-8">
+      <header className="mb-8">
+        <Image
+          src="/logo-path.png"
+          alt="Path"
+          width={140}
+          height={40}
+          priority
+        />
+      </header>
 
-        <div className="flex-1 flex items-center justify-center">
-          <div className="w-full max-w-md">
+      <div className="flex-1 flex items-center justify-center">
+        <div className="w-full max-w-md">
             <h1 className="text-path-h2 font-poppins text-path-primary mb-2">
               Continue your boarding
             </h1>
@@ -140,29 +140,9 @@ export default function BoardingLoginPage() {
           </div>
         </div>
 
-        <footer className="mt-8 text-path-p2 text-path-grey-500 text-center">
-          © 2026 Path2ai.tech
-        </footer>
-      </main>
-
-      {/* Right panel - Info */}
-      <aside className="hidden lg:flex w-1/3 min-h-screen bg-path-primary flex-col p-8 text-white">
-        <div className="flex-1 flex items-center justify-center">
-          <div className="max-w-sm">
-            <h2 className="text-2xl font-poppins mb-4">
-              Secure merchant boarding
-            </h2>
-            <p className="text-lg opacity-90">
-              Complete your onboarding process to start accepting payments with Path.
-            </p>
-          </div>
-        </div>
-        <nav className="flex flex-col gap-2 text-path-p2">
-          <a href="#" className="hover:underline opacity-90">Help</a>
-          <a href="#" className="hover:underline opacity-90">Privacy</a>
-          <a href="#" className="hover:underline opacity-90">Terms and Conditions</a>
-        </nav>
-      </aside>
+      <footer className="mt-8 text-path-p2 text-path-grey-500 text-center">
+        © 2026 Path2ai.tech
+      </footer>
     </div>
   );
 }

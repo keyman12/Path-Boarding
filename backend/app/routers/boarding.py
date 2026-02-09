@@ -450,7 +450,8 @@ def boarding_login(
     
     # Create JWT token with boarding_event_id as subject
     access_token = create_access_token(
-        data={"sub": contact.boarding_event_id, "type": "boarding"}
+        subject=contact.boarding_event_id,
+        extra_claims={"type": "boarding"}
     )
     
     return BoardingLoginResponse(
