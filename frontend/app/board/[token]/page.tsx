@@ -638,15 +638,12 @@ export default function BoardingEntryPage() {
           </header>
           <div className="flex-1 max-w-md mx-auto w-full">
           <nav className="flex items-center flex-wrap gap-1 text-path-p2 text-path-grey-600 mb-6" aria-label="Breadcrumb">
-            <button
-              onClick={() => setStep("form")}
-              className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer"
-            >
+            <span className="flex items-center gap-1.5 text-path-grey-400">
               <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
                 <Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" />
               </span>
               Account
-            </button>
+            </span>
             <span className="mx-1 text-path-grey-400">/</span>
             <span className="flex items-center gap-1.5 font-medium text-path-primary">
               <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
@@ -938,15 +935,7 @@ export default function BoardingEntryPage() {
             © 2026 Path2ai.tech
           </footer>
         </main>
-        {inviteInfo && (
-          <BoardingRightPanel 
-            partner={inviteInfo.partner}
-            onBack={{
-              label: "Account",
-              onClick: () => setStep("form")
-            }}
-          />
-        )}
+        {inviteInfo && <BoardingRightPanel partner={inviteInfo.partner} />}
       </div>
     );
   }
@@ -960,15 +949,12 @@ export default function BoardingEntryPage() {
           </header>
           <div className="flex-1 max-w-md mx-auto w-full">
           <nav className="flex items-center flex-wrap gap-1 text-path-p2 text-path-grey-600 mb-6" aria-label="Breadcrumb">
-            <button
-              onClick={() => setStep("form")}
-              className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer"
-            >
+            <span className="flex items-center gap-1.5 text-path-grey-400">
               <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
                 <Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" />
               </span>
               Account
-            </button>
+            </span>
             <span className="mx-1 text-path-grey-400">/</span>
             <button
               onClick={() => setStep("step2")}
