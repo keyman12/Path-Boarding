@@ -620,9 +620,38 @@ export default function BoardingEntryPage() {
     }
     
     if (type === "idCheck.onApplicantSubmitted") {
-      // User completed the verification flow
-      console.log("User submitted verification");
-      handleVerificationComplete("completed");
+      // User submitted documents - check review status
+      console.log("User submitted verification, status:", payload?.reviewStatus);
+      
+      // Check the actual review status
+      const reviewStatus = payload?.reviewStatus;
+      
+      if (reviewStatus === "completed") {
+        // Auto-check approved immediately
+        handleVerificationComplete("completed");
+      } else if (reviewStatus === "pending") {
+        // Waiting for review (manual or auto-check in progress)
+        console.log("Verification submitted, pending review");
+        // Mark as pending and show appropriate message
+        setVerificationStatus("pending");
+        handleVerificationComplete("completed"); // Still move to next step
+      } else {
+        // Other statuses
+        console.log("Unexpected review status:", reviewStatus);
+        handleVerificationComplete("completed"); // Default: move forward
+      }
+    }
+    
+    if (type === "idCheck.onApplicantReviewed") {
+      // Final review decision from SumSub
+      console.log("Review completed:", payload);
+      const reviewResult = payload?.reviewResult?.reviewAnswer;
+      
+      if (reviewResult === "GREEN") {
+        handleVerificationComplete("completed");
+      } else if (reviewResult === "RED") {
+        handleVerificationComplete("rejected");
+      }
     }
     
     if (type === "idCheck.onError") {
@@ -1186,6 +1215,29 @@ export default function BoardingEntryPage() {
                   {sumsubLoading ? "Loading..." : "Start Verification"}
                 </button>
               </>
+            ) : verificationStatus === "pending" ? (
+              <div className="space-y-4">
+                <div className="p-6 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                      <svg className="w-6 h-6 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    </div>
+                    <h2 className="text-path-h3 font-poppins text-blue-800">Verification Submitted!</h2>
+                  </div>
+                  <p className="text-path-p1 text-blue-700 mb-2">
+                    Thank you for submitting your documents. Your verification is being reviewed.
+                  </p>
+                  <p className="text-path-p2 text-blue-600">
+                    This typically takes 1-5 minutes. You can continue with the application, and we'll notify you once the review is complete.
+                  </p>
+                </div>
+                <p className="text-path-p2 text-path-grey-600 text-center">
+                  Redirecting to next step...
+                </p>
+              </div>
             ) : verificationStatus === "completed" ? (
               <div className="space-y-4">
                 <div className="p-6 bg-green-50 border border-green-200 rounded-lg">
