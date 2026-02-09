@@ -86,33 +86,26 @@ async def generate_access_token(
     Raises:
         httpx.HTTPError: If the request fails
     """
-    import json
     from urllib.parse import urlencode
     
     level = level_name or settings.SUMSUB_LEVEL_NAME
     
-    # Build query parameters
+    # Build query parameters - all params go in the query string, not body
     params = {
         "userId": user_id,
-        "levelName": level
+        "levelName": level,
+        "ttlInSecs": str(ttl_seconds)
     }
     query_string = urlencode(params)
     path = f"/resources/accessTokens?{query_string}"
     
-    # Body (JSON)
-    body = {
-        "ttlInSecs": ttl_seconds,
-        "userId": user_id,
-        "levelName": level
-    }
-    body_bytes = json.dumps(body).encode()
-    
-    headers = _get_headers("POST", path, body_bytes)
+    # No body for this endpoint
+    headers = _get_headers("POST", path, b"")
     url = f"{settings.SUMSUB_BASE_URL}{path}"
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, headers=headers, content=body_bytes)
+            response = await client.post(url, headers=headers)
             response.raise_for_status()
             return response.json()
     except httpx.HTTPStatusError as e:
