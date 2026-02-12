@@ -1,9 +1,21 @@
 /**
  * API client for Path Boarding backend.
- * Base URL from NEXT_PUBLIC_API_URL (e.g. http://localhost:8000).
+ * Base URL from NEXT_PUBLIC_API_URL.
+ * - Empty or unset on production: use same origin (relative URLs)
+ * - http://localhost:8000: for local dev
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+function getApiBase(): string {
+  const env = process.env.NEXT_PUBLIC_API_URL;
+  if (env !== undefined && env !== null && env !== "") return env;
+  // In browser on production domain: use same origin
+  if (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+    return "";
+  }
+  return "http://localhost:8000";
+}
+
+const API_BASE = getApiBase();
 
 function errorMessage(detail: unknown): string {
   if (typeof detail === "string") return detail;

@@ -595,18 +595,29 @@ export default function BoardingEntryPage() {
     setSumsubError(null);
     try {
       const res = await apiPost<{ token: string; user_id: string }>(
-        `/boarding/sumsub/generate-token?token=${encodeURIComponent(token)}`,
+        `/boarding/sumsub/generate-token?token=${encodeURIComponent(token ?? "")}`,
         {}
       );
+
+      console.log("[SumSub] Response:", res);
+
       if (res.error) {
-        setSumsubError(res.error);
+        const msg = res.error + (res.statusCode ? ` (HTTP ${res.statusCode})` : "");
+        setSumsubError(msg);
         setSumsubLoading(false);
         return;
       }
-      setSumsubToken(res.data?.token || null);
+      if (!res.data?.token) {
+        setSumsubError("No token received from server.");
+        setSumsubLoading(false);
+        return;
+      }
+      setSumsubToken(res.data.token);
       setSumsubLoading(false);
     } catch (err) {
-      setSumsubError("Failed to initialize verification. Please try again.");
+      const msg = err instanceof Error ? err.message : "Failed to initialize verification. Please try again.";
+      console.error("[SumSub] Error:", err);
+      setSumsubError(msg);
       setSumsubLoading(false);
     }
   }

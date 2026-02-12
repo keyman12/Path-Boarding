@@ -86,3 +86,28 @@ Check logs:
 sudo journalctl -u path-boarding-backend -n 50
 sudo journalctl -u path-boarding-frontend -n 50
 ```
+
+### If "Start Verification" does nothing on personal verification screen
+1. **Check SumSub credentials** in `/opt/boarding/backend.env`:
+   ```bash
+   SUMSUB_APP_TOKEN=sbx:...
+   SUMSUB_SECRET_KEY=...
+   SUMSUB_LEVEL_NAME="Personal ID"
+   ```
+
+2. **Add production domain** to SumSub WebSDK: Settings → WebSDK Settings → Domains to host WebSDK → add `https://boarding.path2ai.tech`
+
+3. **Check browser console** (Safari: Develop → Show JavaScript Console) for `[SumSub]` logs and any error messages
+
+4. **Check backend logs** for SumSub token errors:
+   ```bash
+   sudo tail -50 /var/log/boarding/backend-error.log
+   ```
+
+5. **Rebuild frontend** with empty API URL for same-origin:
+   ```bash
+   cd /opt/boarding/repo/frontend
+   echo "NEXT_PUBLIC_API_URL=" > .env.production
+   sudo npm run build
+   sudo systemctl restart path-boarding-frontend
+   ```
