@@ -101,7 +101,7 @@ export default function BoardingEntryPage() {
   const [loading, setLoading] = useState(true);
   const [linkError, setLinkError] = useState<string | null>(null);
 
-  const [step, setStep] = useState<"form" | "verify" | "done" | "step2" | "step3">("form");
+  const [step, setStep] = useState<"form" | "verify" | "done" | "step2" | "step3" | "step4">("form");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
