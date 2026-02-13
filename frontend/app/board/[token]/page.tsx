@@ -12,11 +12,31 @@ type UxGroup = { id: string; label: string; items: MccItem[] };
 type UxTaxonomyTier = { id: string; label: string; children: UxGroup[] };
 type MccTaxonomy = { ux_taxonomy: UxTaxonomyTier[] };
 
+type ProductPackageItemDisplay = {
+  id: string;
+  product_code: string;
+  product_name: string;
+  product_type: string;
+  config?: Record<string, unknown>;
+  store_name?: string | null;
+  store_address?: string | null;
+  epos_terminal?: string | null;
+};
+
+type ProductPackageDisplay = {
+  id: string;
+  uid: string;
+  name: string;
+  description?: string | null;
+  items: ProductPackageItemDisplay[];
+};
+
 type InviteInfo = {
   partner: { name: string; logo_url?: string | null };
   merchant_name?: string | null;
   boarding_event_id: string;
   valid: boolean;
+  product_package?: ProductPackageDisplay | null;
 };
 
 function BoardingRightPanel({ 
@@ -232,6 +252,9 @@ export default function BoardingEntryPage() {
   const [customerIndustry, setCustomerIndustry] = useState("");
   const [customerIndustryTier1, setCustomerIndustryTier1] = useState("");
   const [customerIndustryTier2, setCustomerIndustryTier2] = useState("");
+  const [estimatedMonthlyCardVolume, setEstimatedMonthlyCardVolume] = useState("");
+  const [averageTransactionValue, setAverageTransactionValue] = useState("");
+  const [deliveryTimeframe, setDeliveryTimeframe] = useState("");
   const [customerSupportEmail, setCustomerSupportEmail] = useState("");
   const [customerWebsites, setCustomerWebsites] = useState("");
   const [productDescription, setProductDescription] = useState("");
@@ -461,6 +484,9 @@ export default function BoardingEntryPage() {
           phone_number?: string;
           vat_number?: string;
           customer_industry?: string;
+          estimated_monthly_card_volume?: string;
+          average_transaction_value?: string;
+          delivery_timeframe?: string;
           customer_support_email?: string;
           customer_websites?: string;
           product_description?: string;
@@ -521,6 +547,9 @@ export default function BoardingEntryPage() {
           // Pre-populate step 5 business details
           if (res.data.vat_number != null) setVatNumber(res.data.vat_number);
           if (res.data.customer_industry != null) setCustomerIndustry(res.data.customer_industry);
+          if (res.data.estimated_monthly_card_volume != null) setEstimatedMonthlyCardVolume(res.data.estimated_monthly_card_volume);
+          if (res.data.average_transaction_value != null) setAverageTransactionValue(res.data.average_transaction_value);
+          if (res.data.delivery_timeframe != null) setDeliveryTimeframe(res.data.delivery_timeframe);
           if (res.data.customer_support_email != null) setCustomerSupportEmail(res.data.customer_support_email);
           if (res.data.customer_websites != null) setCustomerWebsites(res.data.customer_websites);
           if (res.data.product_description != null) setProductDescription(res.data.product_description);
@@ -871,12 +900,15 @@ export default function BoardingEntryPage() {
   async function handleSaveForLater() {
     setSaveForLaterLoading(true);
     try {
-      const payload: { current_step: string; vat_number?: string; customer_industry?: string; customer_support_email?: string; customer_websites?: string; product_description?: string } = {
+      const payload: { current_step: string; vat_number?: string; customer_industry?: string; estimated_monthly_card_volume?: string; average_transaction_value?: string; delivery_timeframe?: string; customer_support_email?: string; customer_websites?: string; product_description?: string } = {
         current_step: step,
       };
       if (step === "step5") {
         payload.vat_number = vatNumber;
         payload.customer_industry = customerIndustry;
+        payload.estimated_monthly_card_volume = estimatedMonthlyCardVolume;
+        payload.average_transaction_value = averageTransactionValue;
+        payload.delivery_timeframe = deliveryTimeframe;
         payload.customer_support_email = customerSupportEmail;
         payload.customer_websites = customerWebsites;
         payload.product_description = productDescription;
@@ -2601,6 +2633,58 @@ export default function BoardingEntryPage() {
               </p>
             )}
 
+            {inviteInfo?.product_package && (
+              <section className="mb-8 p-4 border border-path-grey-200 rounded-lg bg-path-grey-50">
+                <h2 className="text-path-h4 font-poppins text-path-primary mb-2">Your purchased products</h2>
+                <p className="text-path-p2 text-path-grey-600 mb-3">
+                  {inviteInfo.product_package.name}
+                  {inviteInfo.product_package.description && (
+                    <span className="block mt-1">{inviteInfo.product_package.description}</span>
+                  )}
+                </p>
+                <ul className="space-y-3">
+                  {inviteInfo.product_package.items.map((item) => (
+                    <li key={item.id} className="flex flex-col gap-1 p-3 bg-white border border-path-grey-200 rounded-lg">
+                      <span className="font-medium text-path-grey-900">{item.product_name}</span>
+                      {item.store_name && (
+                        <span className="text-path-p2 text-path-grey-600">Store: {item.store_name}</span>
+                      )}
+                      {item.store_address && (
+                        <span className="text-path-p2 text-path-grey-600">Address: {item.store_address}</span>
+                      )}
+                      {item.epos_terminal && (
+                        <span className="text-path-p2 text-path-grey-600">EPOS: {item.epos_terminal}</span>
+                      )}
+                      {item.config?.pct != null && (
+                        <span className="text-path-p2 text-path-grey-600">Rate: {(item.config.pct as number)}%</span>
+                      )}
+                      {item.config?.amount != null && (
+                        <span className="text-path-p2 text-path-grey-600">Fee: £{(item.config.amount as number).toFixed(2)}</span>
+                      )}
+                      {item.config?.enabled != null && item.config.enabled && (
+                        <span className="text-path-p2 text-path-grey-600">Enabled</span>
+                      )}
+                      {item.config?.qty != null && (item.config.qty as number) > 1 && (
+                        <span className="text-path-p2 text-path-grey-600">Quantity: {item.config.qty as number}</span>
+                      )}
+                      {item.config?.pos_price_per_month != null && (
+                        <span className="text-path-p2 text-path-grey-600">£{(item.config.pos_price_per_month as number).toFixed(2)}/month</span>
+                      )}
+                      {item.config?.pos_pricing_type === "per_device_service" && item.config?.pos_price_per_device != null && (
+                        <span className="text-path-p2 text-path-grey-600">
+                          £{(item.config.pos_price_per_device as number).toFixed(2)} per device
+                          {item.config?.pos_monthly_service != null && ` + £${(item.config.pos_monthly_service as number).toFixed(2)}/month service`}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-path-p2 text-path-grey-500 mt-2">
+                  To change your products, please contact {inviteInfo.partner.name}.
+                </p>
+              </section>
+            )}
+
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -2703,6 +2787,75 @@ export default function BoardingEntryPage() {
                     </>
                   )}
                 </div>
+              </div>
+
+              <div>
+                <label htmlFor="estimatedMonthlyCardVolume" className="block text-path-p2 font-medium text-path-grey-700 mb-1">
+                  Estimated monthly card volume
+                </label>
+                <select
+                  id="estimatedMonthlyCardVolume"
+                  value={estimatedMonthlyCardVolume}
+                  onChange={(e) => setEstimatedMonthlyCardVolume(e.target.value)}
+                  className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary bg-white h-11"
+                  style={{ minHeight: "2.75rem" }}
+                >
+                  <option value="">Select volume</option>
+                  <option value="<£1000">&lt;£1,000</option>
+                  <option value="£1000-£2000">£1,000 – £2,000</option>
+                  <option value="£2000-£4000">£2,000 – £4,000</option>
+                  <option value="£4000-£6000">£4,000 – £6,000</option>
+                  <option value="£6000-£10000">£6,000 – £10,000</option>
+                  <option value="£10000-£15000">£10,000 – £15,000</option>
+                  <option value="£15000-£25000">£15,000 – £25,000</option>
+                  <option value="£25000-£50000">£25,000 – £50,000</option>
+                  <option value=">£50000">&gt;£50,000</option>
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="averageTransactionValue" className="block text-path-p2 font-medium text-path-grey-700 mb-1">
+                  Average transaction value
+                </label>
+                <select
+                  id="averageTransactionValue"
+                  value={averageTransactionValue}
+                  onChange={(e) => setAverageTransactionValue(e.target.value)}
+                  className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary bg-white h-11"
+                  style={{ minHeight: "2.75rem" }}
+                >
+                  <option value="">Select value</option>
+                  <option value="£0-£5">£0 – £5</option>
+                  <option value="£5-£10">£5 – £10</option>
+                  <option value="£10-£15">£10 – £15</option>
+                  <option value="£15-£20">£15 – £20</option>
+                  <option value="£20-£30">£20 – £30</option>
+                  <option value="£30-£40">£30 – £40</option>
+                  <option value="£40-£50">£40 – £50</option>
+                  <option value="£50-£75">£50 – £75</option>
+                  <option value="£75-£100">£75 – £100</option>
+                  <option value="£100-£150">£100 – £150</option>
+                  <option value=">£150">&gt;£150</option>
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="deliveryTimeframe" className="block text-path-p2 font-medium text-path-grey-700 mb-1">
+                  When do your customers typically receive their goods?
+                </label>
+                <select
+                  id="deliveryTimeframe"
+                  value={deliveryTimeframe}
+                  onChange={(e) => setDeliveryTimeframe(e.target.value)}
+                  className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary bg-white h-11"
+                  style={{ minHeight: "2.75rem" }}
+                >
+                  <option value="">Select timeframe</option>
+                  <option value="immediately">Immediately</option>
+                  <option value="within_7_days">Within 7 days</option>
+                  <option value="within_30_days">Within 30 days</option>
+                  <option value="over_30_days">Over 30 days</option>
+                </select>
               </div>
 
               <div>

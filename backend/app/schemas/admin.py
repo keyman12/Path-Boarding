@@ -44,6 +44,7 @@ class AdminPartnerUpdate(BaseModel):
     password: Optional[str] = None
     is_active: Optional[bool] = None
     external_id: Optional[str] = None
+    fee_schedule_id: Optional[str] = None
 
 
 class AdminPartnerResponse(BaseModel):
@@ -54,4 +55,5 @@ class AdminPartnerResponse(BaseModel):
     external_id: Optional[str] = None
     logo_url: Optional[str] = None
     is_active: bool
+    fee_schedule_id: str
     created_at: datetime

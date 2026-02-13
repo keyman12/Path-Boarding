@@ -4,11 +4,34 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { API_BASE, apiGet, apiPost } from "@/lib/api";
+import { API_BASE, apiGet, apiPost, apiPatch, apiDelete } from "@/lib/api";
+import { ProductPackageWizard, type CatalogProduct, type WizardItem } from "@/components/ProductPackageWizard";
+import { StoreAddressInput } from "@/components/StoreAddressInput";
 
 const PARTNER_TOKEN_KEY = "path_partner_token";
 
 type InviteResponse = { invite_url: string; expires_at: string; boarding_event_id: string; token: string };
+
+type PackageItem = {
+  id: string;
+  catalog_product_id: string;
+  product_code?: string;
+  product_name?: string;
+  product_type?: string;
+  config?: Record<string, unknown>;
+  sort_order: number;
+  requires_store_epos: boolean;
+};
+
+type ProductPackage = {
+  id: string;
+  partner_id: string;
+  uid: string;
+  name: string;
+  description?: string;
+  items: PackageItem[];
+  created_at?: string;
+};
 
 function authHeaders(token: string) {
   return { Authorization: `Bearer ${token}` };
@@ -35,6 +58,39 @@ export default function BoardingApiPage() {
   const [generateMessage, setGenerateMessage] = useState<string | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
 
+  // Product packages
+  const [activeTab, setActiveTab] = useState<"invite" | "packages">("invite");
+  const [packages, setPackages] = useState<ProductPackage[]>([]);
+  const [catalog, setCatalog] = useState<CatalogProduct[]>([]);
+  const [feeScheduleRates, setFeeScheduleRates] = useState<Record<string, Record<string, number>>>({});
+  const [packagesLoading, setPackagesLoading] = useState(false);
+  const [showCreateWizard, setShowCreateWizard] = useState(false);
+  const [wizardStep, setWizardStep] = useState(1);
+  const [wizardItems, setWizardItems] = useState<WizardItem[]>([]);
+  const [wizardName, setWizardName] = useState("");
+  const [wizardDesc, setWizardDesc] = useState("");
+  const [wizardError, setWizardError] = useState<string | null>(null);
+  const [packageCreateSuccess, setPackageCreateSuccess] = useState<string | null>(null);
+  const [editingPackageId, setEditingPackageId] = useState<string | null>(null);
+
+  // Invite form: package + device details (per POS type: qty + store/address/epos per instance)
+  const [selectedPackageUid, setSelectedPackageUid] = useState<string>("");
+  const [posDeviceConfig, setPosDeviceConfig] = useState<
+    Array<{
+      package_item_id: string;
+      product_name: string;
+      qty: number;
+      instances: Array<{
+        store_name: string;
+        postcode: string;
+        addressLine1: string;
+        addressLine2: string;
+        town: string;
+        epos_terminal: string;
+      }>;
+    }>
+  >([]);
+
   useEffect(() => {
     const t = typeof window !== "undefined" ? localStorage.getItem(PARTNER_TOKEN_KEY) : null;
     setToken(t);
@@ -57,6 +113,58 @@ export default function BoardingApiPage() {
     })();
     return () => { cancelled = true; };
   }, [token, router]);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    setPackagesLoading(true);
+    (async () => {
+      const [catRes, pkgRes, feeRes] = await Promise.all([
+        apiGet<CatalogProduct[]>("/partners/product-catalog", { headers: authHeaders(token) }),
+        apiGet<ProductPackage[]>("/partners/product-packages", { headers: authHeaders(token) }),
+        apiGet<{ rates: Record<string, Record<string, number>> }>("/partners/fee-schedule", { headers: authHeaders(token) }),
+      ]);
+      if (cancelled) return;
+      if (catRes.error && (catRes as { statusCode?: number }).statusCode === 401) {
+        clearPartnerAndRedirect(router, setToken);
+        return;
+      }
+      if (pkgRes.error && (pkgRes as { statusCode?: number }).statusCode === 401) {
+        clearPartnerAndRedirect(router, setToken);
+        return;
+      }
+      if (feeRes.error && (feeRes as { statusCode?: number }).statusCode === 401) {
+        clearPartnerAndRedirect(router, setToken);
+        return;
+      }
+      if (catRes.data) setCatalog(catRes.data);
+      if (pkgRes.data) setPackages(pkgRes.data);
+      if (feeRes.data?.rates) setFeeScheduleRates(feeRes.data.rates);
+      setPackagesLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [token, router]);
+
+  useEffect(() => {
+    if (!selectedPackageUid || !packages.length) {
+      setPosDeviceConfig([]);
+      return;
+    }
+    const pkg = packages.find((p) => p.uid === selectedPackageUid);
+    if (!pkg) {
+      setPosDeviceConfig([]);
+      return;
+    }
+    const posItems = pkg.items.filter((i) => i.requires_store_epos);
+    setPosDeviceConfig(
+      posItems.map((i) => ({
+        package_item_id: i.id,
+        product_name: i.product_name ?? "POS device",
+        qty: 1,
+        instances: [{ store_name: "", postcode: "", addressLine1: "", addressLine2: "", town: "", epos_terminal: "" }],
+      }))
+    );
+  }, [selectedPackageUid, packages]);
 
   const handleLogin = useCallback(
     async (e: React.FormEvent) => {
@@ -88,12 +196,30 @@ export default function BoardingApiPage() {
     setGenerateError(null);
     setGenerateMessage(null);
     if (!token) return;
+    const body: Record<string, unknown> = {
+      merchant_name: merchantName || undefined,
+      email: merchantEmail || undefined,
+      product_package_uid: selectedPackageUid || undefined,
+    };
+    if (selectedPackageUid && posDeviceConfig.length > 0) {
+      body.device_details = posDeviceConfig.flatMap((cfg) =>
+        cfg.instances.map((inst) => {
+          const addrParts = [inst.addressLine1, inst.addressLine2, inst.town, inst.postcode].filter(Boolean);
+          return {
+            package_item_id: cfg.package_item_id,
+            store_name: inst.store_name || undefined,
+            store_address: addrParts.length > 0 ? addrParts.join(", ") : undefined,
+            epos_terminal: inst.epos_terminal || undefined,
+          };
+        })
+      );
+    }
     const res = await apiPost<InviteResponse>(
       "/partners/boarding/invite",
-      { merchant_name: merchantName || undefined, email: merchantEmail || undefined },
+      body,
       { headers: authHeaders(token) }
     );
-      if (res.error) {
+    if (res.error) {
       if ((res as { statusCode?: number }).statusCode === 401) {
         clearPartnerAndRedirect(router, setToken);
         return;
@@ -111,9 +237,27 @@ export default function BoardingApiPage() {
     setGenerateError(null);
     setGenerateMessage(null);
     if (!token) return;
+    const body: Record<string, unknown> = {
+      merchant_name: merchantName || undefined,
+      email: merchantEmail || undefined,
+      product_package_uid: selectedPackageUid || undefined,
+    };
+    if (selectedPackageUid && posDeviceConfig.length > 0) {
+      body.device_details = posDeviceConfig.flatMap((cfg) =>
+        cfg.instances.map((inst) => {
+          const addrParts = [inst.addressLine1, inst.addressLine2, inst.town, inst.postcode].filter(Boolean);
+          return {
+            package_item_id: cfg.package_item_id,
+            store_name: inst.store_name || undefined,
+            store_address: addrParts.length > 0 ? addrParts.join(", ") : undefined,
+            epos_terminal: inst.epos_terminal || undefined,
+          };
+        })
+      );
+    }
     const res = await apiPost<InviteResponse>(
       "/partners/boarding/invite",
-      { merchant_name: merchantName || undefined, email: merchantEmail || undefined },
+      body,
       { headers: authHeaders(token) }
     );
     if (res.error) {
@@ -244,6 +388,29 @@ export default function BoardingApiPage() {
           <p className="text-path-p2 text-path-grey-600 mt-1">Boarding Administration</p>
         </div>
 
+        <div className="flex gap-2 border-b border-path-grey-200">
+          <button
+            type="button"
+            onClick={() => setActiveTab("invite")}
+            className={`px-4 py-2 font-medium rounded-t-lg transition-colors ${
+              activeTab === "invite" ? "bg-path-primary text-white" : "bg-path-grey-100 text-path-grey-700 hover:bg-path-grey-200"
+            }`}
+          >
+            Generate Link
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("packages")}
+            className={`px-4 py-2 font-medium rounded-t-lg transition-colors ${
+              activeTab === "packages" ? "bg-path-primary text-white" : "bg-path-grey-100 text-path-grey-700 hover:bg-path-grey-200"
+            }`}
+          >
+            Product Packages
+          </button>
+        </div>
+
+        {activeTab === "invite" && (
+          <>
         {/* API docs */}
         <section className="border border-path-grey-300 rounded-lg p-4">
           <h2 className="text-path-h4 font-poppins text-path-primary mb-2">API documentation</h2>
@@ -279,6 +446,122 @@ export default function BoardingApiPage() {
           {generateMessage && <p className="text-path-p2 text-path-primary font-medium mb-2">{generateMessage}</p>}
           {generateError && <p className="text-path-p2 text-path-secondary mb-2">{generateError}</p>}
           <form onSubmit={handleGenerateLink} className="space-y-4 max-w-md">
+            <div>
+              <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Product package (optional)</label>
+              <select
+                value={selectedPackageUid}
+                onChange={(e) => setSelectedPackageUid(e.target.value)}
+                className="w-full border border-path-grey-300 rounded-lg px-3 py-2 text-path-p1"
+              >
+                <option value="">None</option>
+                {packages.map((p) => (
+                  <option key={p.id} value={p.uid}>{p.name} ({p.uid})</option>
+                ))}
+              </select>
+            </div>
+            {posDeviceConfig.length > 0 && (
+              <div className="space-y-4 border border-path-grey-200 rounded-lg p-3 bg-path-grey-50">
+                <h3 className="text-path-p2 font-medium text-path-grey-700">Device details (required for POS devices)</h3>
+                {posDeviceConfig.map((cfg, cfgIdx) => (
+                  <div key={cfg.package_item_id} className="space-y-3 p-3 bg-white rounded border border-path-grey-200">
+                    <div className="flex items-center gap-3">
+                      <label className="text-path-p2 font-medium text-path-grey-700">
+                        How many {cfg.product_name}?
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={cfg.qty}
+                        onChange={(e) => {
+                          const v = Math.max(1, parseInt(e.target.value, 10) || 1);
+                          setPosDeviceConfig((prev) => {
+                            const next = [...prev];
+                            const c = { ...next[cfgIdx] };
+                            const diff = v - c.instances.length;
+                            if (diff > 0) {
+                              c.instances = [...c.instances, ...Array(diff).fill(null).map(() => ({ store_name: "", postcode: "", addressLine1: "", addressLine2: "", town: "", epos_terminal: "" }))];
+                            } else if (diff < 0) {
+                              c.instances = c.instances.slice(0, v);
+                            }
+                            c.qty = v;
+                            next[cfgIdx] = c;
+                            return next;
+                          });
+                        }}
+                        className="w-20 border border-path-grey-300 rounded px-2 py-1 text-path-p2"
+                      />
+                    </div>
+                    {cfg.instances.map((inst, instIdx) => (
+                      <div key={instIdx} className="pl-4 border-l-2 border-path-grey-200 space-y-2">
+                        <p className="text-path-p2 text-path-grey-600 font-medium">{cfg.product_name} #{instIdx + 1}</p>
+                        <input
+                          type="text"
+                          placeholder="Store name"
+                          value={inst.store_name}
+                          onChange={(e) => {
+                            setPosDeviceConfig((prev) => {
+                              const next = prev.map((c, i) =>
+                                i === cfgIdx
+                                  ? { ...c, instances: c.instances.map((x, j) => (j === instIdx ? { ...x, store_name: e.target.value } : x)) }
+                                  : c
+                              );
+                              return next;
+                            });
+                          }}
+                          className="w-full border border-path-grey-300 rounded px-2 py-1 text-path-p2"
+                        />
+                        <StoreAddressInput
+                          label="Store address (postcode first for UK)"
+                          postcode={inst.postcode}
+                          addressLine1={inst.addressLine1}
+                          addressLine2={inst.addressLine2}
+                          town={inst.town}
+                          onPostcodeChange={(v) => {
+                            setPosDeviceConfig((prev) =>
+                              prev.map((c, i) =>
+                                i === cfgIdx
+                                  ? { ...c, instances: c.instances.map((x, j) => (j === instIdx ? { ...x, postcode: v } : x)) }
+                                  : c
+                              )
+                            );
+                          }}
+                          onAddressChange={(a) => {
+                            setPosDeviceConfig((prev) =>
+                              prev.map((c, i) =>
+                                i === cfgIdx
+                                  ? {
+                                      ...c,
+                                      instances: c.instances.map((x, j) =>
+                                        j === instIdx ? { ...x, addressLine1: a.addressLine1, addressLine2: a.addressLine2, town: a.town } : x
+                                      ),
+                                    }
+                                  : c
+                              )
+                            );
+                          }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="EPOS terminal"
+                          value={inst.epos_terminal}
+                          onChange={(e) => {
+                            setPosDeviceConfig((prev) => {
+                              const next = prev.map((c, i) =>
+                                i === cfgIdx
+                                  ? { ...c, instances: c.instances.map((x, j) => (j === instIdx ? { ...x, epos_terminal: e.target.value } : x)) }
+                                  : c
+                              );
+                              return next;
+                            });
+                          }}
+                          className="w-full border border-path-grey-300 rounded px-2 py-1 text-path-p2"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
             <div>
               <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Merchant name (optional)</label>
               <input
@@ -338,6 +621,146 @@ export default function BoardingApiPage() {
             </div>
           )}
         </section>
+          </>
+        )}
+
+        {activeTab === "packages" && (
+          <section className="border border-path-grey-300 rounded-lg p-4">
+            <h2 className="text-path-h4 font-poppins text-path-primary mb-2">Product Packages</h2>
+            <p className="text-path-p2 text-path-grey-600 mb-4">
+              Create and manage product packages. Assign a package when generating boarding links to pre-configure products for merchants.
+            </p>
+            {packageCreateSuccess && (
+              <p className="text-path-p2 text-path-primary font-medium mb-2">{packageCreateSuccess}</p>
+            )}
+            {!showCreateWizard ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingPackageId(null);
+                    setShowCreateWizard(true);
+                    setWizardStep(1);
+                    setWizardItems([]);
+                    setWizardName("");
+                    setWizardDesc("");
+                    setWizardError(null);
+                    setPackageCreateSuccess(null);
+                  }}
+                  className="px-4 py-2 bg-path-primary text-white rounded-lg font-medium hover:bg-path-primary-light-1 mb-4"
+                >
+                  Create package
+                </button>
+                {packagesLoading ? (
+                  <p className="text-path-p2 text-path-grey-600">Loading packages…</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {packages.map((p) => (
+                      <li key={p.id} className="flex items-center justify-between border border-path-grey-200 rounded-lg p-3">
+                        <div>
+                          <span className="font-medium">{p.name}</span>
+                          <span className="text-path-grey-500 ml-2">({p.uid})</span>
+                          {p.description && <p className="text-path-p2 text-path-grey-600 mt-1">{p.description}</p>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-path-p2 text-path-grey-500">{p.items.length} items</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingPackageId(p.id);
+                              setWizardName(p.name);
+                              setWizardDesc(p.description ?? "");
+                              setWizardItems(
+                                p.items.map((it, i) => ({
+                                  catalog_product_id: it.catalog_product_id,
+                                  config: it.config ?? {},
+                                  sort_order: it.sort_order ?? i,
+                                }))
+                              );
+                              setWizardStep(1);
+                              setWizardError(null);
+                              setPackageCreateSuccess(null);
+                              setShowCreateWizard(true);
+                            }}
+                            className="px-3 py-1 text-path-p2 border border-path-grey-300 rounded hover:bg-path-grey-100"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!confirm(`Delete package "${p.name}"? This cannot be undone.`)) return;
+                              if (!token) return;
+                              const res = await apiDelete(`/partners/product-packages/${p.id}`, { headers: authHeaders(token) });
+                              if (res.error) {
+                                setPackageCreateSuccess(null);
+                                alert(res.error);
+                                return;
+                              }
+                              setPackages((prev) => prev.filter((x) => x.id !== p.id));
+                              setPackageCreateSuccess("Package deleted.");
+                            }}
+                            className="px-3 py-1 text-path-p2 border border-path-secondary text-path-secondary rounded hover:bg-path-grey-100"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                    {packages.length === 0 && <li className="text-path-p2 text-path-grey-500">No packages yet. Create one to get started.</li>}
+                  </ul>
+                )}
+              </>
+            ) : (
+              <ProductPackageWizard
+                catalog={catalog}
+                feeScheduleRates={feeScheduleRates}
+                wizardStep={wizardStep}
+                setWizardStep={setWizardStep}
+                wizardItems={wizardItems}
+                setWizardItems={setWizardItems}
+                wizardName={wizardName}
+                setWizardName={setWizardName}
+                wizardDesc={wizardDesc}
+                setWizardDesc={setWizardDesc}
+                wizardError={wizardError}
+                setWizardError={setWizardError}
+                onCancel={() => {
+                  setShowCreateWizard(false);
+                  setEditingPackageId(null);
+                }}
+                onSuccess={(uid) => {
+                  setShowCreateWizard(false);
+                  setEditingPackageId(null);
+                  setPackageCreateSuccess(editingPackageId ? "Package updated." : `Package created. UID: ${uid}`);
+                  if (token) {
+                    apiGet<ProductPackage[]>("/partners/product-packages", { headers: authHeaders(token) }).then((r) => {
+                      if (r.data) setPackages(r.data);
+                    });
+                  }
+                }}
+                createPackage={async (payload) => {
+                  if (!token) return { error: "Not authenticated" };
+                  const doRequest = async () => {
+                    if (editingPackageId) {
+                      return apiPatch<{ uid: string }>(`/partners/product-packages/${editingPackageId}`, payload, { headers: authHeaders(token) });
+                    }
+                    return apiPost<{ uid: string }>("/partners/product-packages", payload, { headers: authHeaders(token) });
+                  };
+                  const res = await doRequest();
+                  if (res.error) {
+                    if ((res as { statusCode?: number }).statusCode === 401) {
+                      clearPartnerAndRedirect(router, setToken);
+                      return { error: "Session expired. Please log in again." };
+                    }
+                    return { error: res.error };
+                  }
+                  return { uid: res.data?.uid ?? "" };
+                }}
+              />
+            )}
+          </section>
+        )}
       </div>
 
       <footer className="mt-12 pt-6 border-t border-path-grey-200 text-path-p2 text-path-grey-500">

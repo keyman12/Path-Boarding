@@ -1,4 +1,5 @@
 import uuid
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_current_partner
 from app.core.deps import get_db
 from app.core.security import get_password_hash, verify_password, create_access_token
+from app.models.fee_schedule import FeeSchedule
 from app.models.partner import Partner
 from app.schemas.partner import PartnerCreate, PartnerLogin, PartnerResponse, TokenResponse
 
@@ -19,18 +21,25 @@ class PartnerMeResponse(BaseModel):
 
 @router.post("/partner/register", response_model=PartnerResponse)
 def partner_register(data: PartnerCreate, db: Session = Depends(get_db)):
-    """Register a new partner (ISV)."""
+    """Register a new partner (ISV). Assigns the first available fee schedule (or Default)."""
     existing = db.query(Partner).filter(Partner.email == data.email).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered",
         )
+    schedule = db.query(FeeSchedule).filter(FeeSchedule.name == "Default").first() or db.query(FeeSchedule).first()
+    if not schedule:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="No fee schedule available. Please contact admin.",
+        )
     partner = Partner(
         id=str(uuid.uuid4()),
         name=data.name,
         email=data.email,
         hashed_password=get_password_hash(data.password),
+        fee_schedule_id=schedule.id,
         is_active=True,
     )
     db.add(partner)
@@ -53,7 +62,8 @@ def partner_login(data: PartnerLogin, db: Session = Depends(get_db)):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Partner account is inactive",
         )
-    token = create_access_token(subject=partner.id)
+    # 24h expiry for partner sessions (wizard/config can take a while)
+    token = create_access_token(subject=partner.id, expires_delta=timedelta(hours=24))
     return TokenResponse(access_token=token)
 
 

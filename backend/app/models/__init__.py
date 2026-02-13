@@ -8,6 +8,11 @@ from app.models.merchant import Merchant
 from app.models.merchant_user import MerchantUser
 from app.models.verification_code import VerificationCode
 from app.models.audit_log import AuditLog
+from app.models.product_catalog import ProductCatalog
+from app.models.product_package import ProductPackage
+from app.models.product_package_item import ProductPackageItem
+from app.models.invite_device_detail import InviteDeviceDetail
+from app.models.fee_schedule import FeeSchedule
 
 __all__ = [
     "Base",
@@ -20,4 +25,9 @@ __all__ = [
     "MerchantUser",
     "VerificationCode",
     "AuditLog",
+    "ProductCatalog",
+    "ProductPackage",
+    "ProductPackageItem",
+    "InviteDeviceDetail",
+    "FeeSchedule",
 ]

@@ -19,7 +19,10 @@ class Invite(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)
     used_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    product_package_id = Column(String(36), ForeignKey("product_packages.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # relationships
     partner = relationship("Partner", back_populates="invites")
     boarding_event = relationship("BoardingEvent", back_populates="invites")
+    product_package = relationship("ProductPackage", back_populates="invites")
+    device_details = relationship("InviteDeviceDetail", back_populates="invite", cascade="all, delete-orphan")

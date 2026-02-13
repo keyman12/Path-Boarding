@@ -1,4 +1,5 @@
 import os
+import secrets
 import shutil
 import uuid
 from pathlib import Path
@@ -16,7 +17,11 @@ from app.models.boarding_event import BoardingEvent
 from app.models.invite import Invite
 from app.models.merchant import Merchant
 from app.models.merchant_user import MerchantUser
+from app.models.fee_schedule import FeeSchedule
 from app.models.partner import Partner
+from app.models.product_catalog import ProductCatalog
+from app.models.product_package import ProductPackage
+from app.models.product_package_item import ProductPackageItem
 from app.schemas.admin import (
     AdminChangePassword,
     AdminCreate,
@@ -26,6 +31,21 @@ from app.schemas.admin import (
     AdminPartnerResponse,
     AdminUserResponse,
     TokenResponse,
+)
+from app.schemas.fee_schedule import (
+    DEFAULT_RATES,
+    FeeScheduleCreate,
+    FeeScheduleResponse,
+    FeeScheduleUpdate,
+    PRODUCT_SCHEMA,
+)
+from app.schemas.product_catalog import ProductCatalogItem
+from app.schemas.product_package import (
+    PackageItemCreate,
+    PackageItemResponse,
+    ProductPackageCreate,
+    ProductPackageResponse,
+    ProductPackageUpdate,
 )
 
 router = APIRouter()
@@ -100,26 +120,123 @@ def change_admin_password(
     return {"ok": True, "message": "Password updated"}
 
 
+# --- Fee Schedules ---
+
+
+@router.get("/fee-schedule-schema")
+def get_fee_schedule_schema(
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """Return product schema for fee schedule editor. Single place to add new products (PRODUCT_SCHEMA)."""
+    return {"products": PRODUCT_SCHEMA}
+
+
+@router.get("/fee-schedules", response_model=list[FeeScheduleResponse])
+def list_fee_schedules(
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """List all fee schedules."""
+    schedules = db.query(FeeSchedule).order_by(FeeSchedule.name).all()
+    return schedules
+
+
+@router.post("/fee-schedules", response_model=FeeScheduleResponse)
+def create_fee_schedule(
+    body: FeeScheduleCreate,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """Create a fee schedule. Pre-loaded with defaults if rates not provided."""
+    rates = body.rates if body.rates is not None else dict(DEFAULT_RATES)
+    schedule = FeeSchedule(
+        id=str(uuid.uuid4()),
+        name=body.name,
+        rates=rates,
+    )
+    db.add(schedule)
+    db.commit()
+    db.refresh(schedule)
+    return schedule
+
+
+@router.get("/fee-schedules/{schedule_id}", response_model=FeeScheduleResponse)
+def get_fee_schedule(
+    schedule_id: str,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """Get a fee schedule by ID."""
+    schedule = db.query(FeeSchedule).filter(FeeSchedule.id == schedule_id).first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Fee schedule not found")
+    return schedule
+
+
+@router.patch("/fee-schedules/{schedule_id}", response_model=FeeScheduleResponse)
+def update_fee_schedule(
+    schedule_id: str,
+    body: FeeScheduleUpdate,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """Update a fee schedule."""
+    schedule = db.query(FeeSchedule).filter(FeeSchedule.id == schedule_id).first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Fee schedule not found")
+    if body.name is not None:
+        schedule.name = body.name
+    if body.rates is not None:
+        schedule.rates = body.rates
+    db.commit()
+    db.refresh(schedule)
+    return schedule
+
+
+@router.delete("/fee-schedules/{schedule_id}", status_code=204)
+def delete_fee_schedule(
+    schedule_id: str,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """Delete a fee schedule. Fails if any partner uses it."""
+    schedule = db.query(FeeSchedule).filter(FeeSchedule.id == schedule_id).first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Fee schedule not found")
+    if schedule.partners:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete: fee schedule is assigned to one or more partners. Reassign them first.",
+        )
+    db.delete(schedule)
+    db.commit()
+
+
 @router.post("/partners", response_model=AdminPartnerResponse)
 def setup_new_isv(
     name: str = Form(...),
     email: str = Form(...),
     password: str = Form(...),
+    fee_schedule_id: str = Form(...),
     external_id: str = Form(None),
     logo: UploadFile = File(None),
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
 ):
-    """Setup a new ISV (partner). Optional logo upload (size limit for welcome screen)."""
+    """Setup a new ISV (partner). Requires a fee schedule. Optional logo upload (size limit for welcome screen)."""
     existing = db.query(Partner).filter(Partner.email == email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+    schedule = db.query(FeeSchedule).filter(FeeSchedule.id == fee_schedule_id).first()
+    if not schedule:
+        raise HTTPException(status_code=400, detail="Fee schedule not found")
     partner_id = str(uuid.uuid4())
     partner = Partner(
         id=partner_id,
         name=name,
         email=email,
         hashed_password=get_password_hash(password),
+        fee_schedule_id=fee_schedule_id,
         external_id=external_id or None,
         is_active=True,
     )
@@ -196,6 +313,11 @@ def update_partner(
         partner.is_active = body.is_active
     if body.external_id is not None:
         partner.external_id = body.external_id or None
+    if body.fee_schedule_id is not None:
+        schedule = db.query(FeeSchedule).filter(FeeSchedule.id == body.fee_schedule_id).first()
+        if not schedule:
+            raise HTTPException(status_code=400, detail="Fee schedule not found")
+        partner.fee_schedule_id = body.fee_schedule_id
     db.commit()
     db.refresh(partner)
     return partner
@@ -267,6 +389,174 @@ def delete_partner_logo(
     return partner
 
 
+# --- Product Catalog (Admin read) ---
+
+
+@router.get("/product-catalog", response_model=list[ProductCatalogItem])
+def admin_list_product_catalog(
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """List all products in the global catalog."""
+    products = db.query(ProductCatalog).order_by(ProductCatalog.product_type, ProductCatalog.product_code).all()
+    return [
+        ProductCatalogItem(
+            id=p.id,
+            product_type=p.product_type,
+            product_code=p.product_code,
+            name=p.name,
+            config_schema=p.config_schema,
+            requires_store_epos=p.requires_store_epos or False,
+        )
+        for p in products
+    ]
+
+
+# --- Product Packages (Admin manages for any partner) ---
+
+
+def _admin_package_to_response(pkg: ProductPackage) -> ProductPackageResponse:
+    items = []
+    for it in pkg.items:
+        cat = it.catalog_product
+        items.append(
+            PackageItemResponse(
+                id=it.id,
+                catalog_product_id=it.catalog_product_id,
+                product_code=cat.product_code if cat else None,
+                product_name=cat.name if cat else None,
+                product_type=cat.product_type if cat else None,
+                config=it.config,
+                sort_order=it.sort_order,
+                requires_store_epos=cat.requires_store_epos if cat else False,
+            )
+        )
+    return ProductPackageResponse(
+        id=pkg.id,
+        partner_id=pkg.partner_id,
+        uid=pkg.uid,
+        name=pkg.name,
+        description=pkg.description,
+        items=items,
+        created_at=pkg.created_at.isoformat() if pkg.created_at else None,
+    )
+
+
+@router.get("/partners/{partner_id}/product-packages", response_model=list[ProductPackageResponse])
+def admin_list_product_packages(
+    partner_id: str,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """List product packages for a partner."""
+    partner = db.query(Partner).filter(Partner.id == partner_id).first()
+    if not partner:
+        raise HTTPException(status_code=404, detail="Partner not found")
+    packages = db.query(ProductPackage).filter(ProductPackage.partner_id == partner_id).order_by(ProductPackage.created_at.desc()).all()
+    return [_admin_package_to_response(p) for p in packages]
+
+
+@router.post("/partners/{partner_id}/product-packages", response_model=ProductPackageResponse)
+def admin_create_product_package(
+    partner_id: str,
+    body: ProductPackageCreate,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """Create a product package for a partner."""
+    partner = db.query(Partner).filter(Partner.id == partner_id).first()
+    if not partner:
+        raise HTTPException(status_code=404, detail="Partner not found")
+    uid = "PKG-" + secrets.token_urlsafe(8).upper().replace("-", "").replace("_", "")[:12]
+    while db.query(ProductPackage).filter(ProductPackage.partner_id == partner_id, ProductPackage.uid == uid).first():
+        uid = "PKG-" + secrets.token_urlsafe(8).upper().replace("-", "").replace("_", "")[:12]
+    pkg_id = str(uuid.uuid4())
+    pkg = ProductPackage(
+        id=pkg_id,
+        partner_id=partner_id,
+        uid=uid,
+        name=body.name,
+        description=body.description,
+    )
+    db.add(pkg)
+    for i, item in enumerate(body.items):
+        db.add(
+            ProductPackageItem(
+                id=str(uuid.uuid4()),
+                package_id=pkg_id,
+                catalog_product_id=item.catalog_product_id,
+                config=item.config,
+                sort_order=item.sort_order if item.sort_order else i,
+            )
+        )
+    db.commit()
+    db.refresh(pkg)
+    return _admin_package_to_response(pkg)
+
+
+@router.get("/partners/{partner_id}/product-packages/{package_id}", response_model=ProductPackageResponse)
+def admin_get_product_package(
+    partner_id: str,
+    package_id: str,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """Get a product package by ID."""
+    pkg = db.query(ProductPackage).filter(ProductPackage.id == package_id, ProductPackage.partner_id == partner_id).first()
+    if not pkg:
+        raise HTTPException(status_code=404, detail="Package not found")
+    return _admin_package_to_response(pkg)
+
+
+@router.patch("/partners/{partner_id}/product-packages/{package_id}", response_model=ProductPackageResponse)
+def admin_update_product_package(
+    partner_id: str,
+    package_id: str,
+    body: ProductPackageUpdate,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """Update a product package."""
+    pkg = db.query(ProductPackage).filter(ProductPackage.id == package_id, ProductPackage.partner_id == partner_id).first()
+    if not pkg:
+        raise HTTPException(status_code=404, detail="Package not found")
+    if body.name is not None:
+        pkg.name = body.name
+    if body.description is not None:
+        pkg.description = body.description
+    if body.items is not None:
+        for it in pkg.items:
+            db.delete(it)
+        for i, item in enumerate(body.items):
+            db.add(
+                ProductPackageItem(
+                    id=str(uuid.uuid4()),
+                    package_id=pkg.id,
+                    catalog_product_id=item.catalog_product_id,
+                    config=item.config,
+                    sort_order=item.sort_order if item.sort_order else i,
+                )
+            )
+    db.commit()
+    db.refresh(pkg)
+    return _admin_package_to_response(pkg)
+
+
+@router.delete("/partners/{partner_id}/product-packages/{package_id}", status_code=204)
+def admin_delete_product_package(
+    partner_id: str,
+    package_id: str,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    """Delete a product package."""
+    pkg = db.query(ProductPackage).filter(ProductPackage.id == package_id, ProductPackage.partner_id == partner_id).first()
+    if not pkg:
+        raise HTTPException(status_code=404, detail="Package not found")
+    db.delete(pkg)
+    db.commit()
+
+
 @router.delete("/partners/{partner_id}")
 def delete_partner(
     partner_id: str,
@@ -284,6 +574,7 @@ def delete_partner(
     if event_ids:
         db.query(BoardingContact).filter(BoardingContact.boarding_event_id.in_(event_ids)).delete(synchronize_session=False)
     db.query(Invite).filter(Invite.partner_id == partner_id).delete(synchronize_session=False)
+    db.query(ProductPackage).filter(ProductPackage.partner_id == partner_id).delete(synchronize_session=False)
     db.query(BoardingEvent).filter(BoardingEvent.partner_id == partner_id).update({BoardingEvent.merchant_id: None}, synchronize_session=False)
     db.query(BoardingEvent).filter(BoardingEvent.partner_id == partner_id).delete(synchronize_session=False)
     if merchant_ids:

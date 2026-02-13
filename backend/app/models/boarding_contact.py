@@ -36,6 +36,9 @@ class BoardingContact(Base):
     # Step 5 business details
     vat_number = Column(String(32), nullable=True)
     customer_industry = Column(String(32), nullable=True)
+    estimated_monthly_card_volume = Column(String(64), nullable=True)
+    average_transaction_value = Column(String(64), nullable=True)
+    delivery_timeframe = Column(String(32), nullable=True)
     customer_support_email = Column(String(255), nullable=True)
     customer_websites = Column(String(1024), nullable=True)
     product_description = Column(String(4096), nullable=True)

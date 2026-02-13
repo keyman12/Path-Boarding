@@ -4,16 +4,23 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { API_BASE, apiGet, apiPatch, apiPost } from "@/lib/api";
+import { API_BASE, apiGet, apiPatch, apiPost, apiDelete } from "@/lib/api";
+import { ProductPackageWizard, type CatalogProduct, type WizardItem } from "@/components/ProductPackageWizard";
 
 const ADMIN_TOKEN_KEY = "path_admin_token";
 
 type AdminUser = { id: string; username: string; created_at: string };
-type Partner = { id: string; name: string; email: string; external_id?: string | null; logo_url?: string | null; is_active: boolean; created_at: string };
+type Partner = { id: string; name: string; email: string; external_id?: string | null; logo_url?: string | null; is_active: boolean; fee_schedule_id: string; created_at: string };
+type FeeSchedule = { id: string; name: string; rates: Record<string, Record<string, number>> };
+
+type PackageItem = { id: string; catalog_product_id: string; product_code?: string; product_name?: string; product_type?: string; config?: Record<string, unknown>; sort_order: number; requires_store_epos: boolean };
+type ProductPackage = { id: string; partner_id: string; uid: string; name: string; description?: string; items: PackageItem[]; created_at?: string };
 
 function authHeaders(token: string) {
   return { Authorization: `Bearer ${token}` };
 }
+
+const inputClass = "w-full border border-path-grey-300 rounded-lg px-3 py-2 text-path-p1 min-h-[2.75rem]";
 
 function isUnauthorized(res: { error?: string; statusCode?: number }): boolean {
   return res.error != null && (res as { statusCode?: number }).statusCode === 401;
@@ -28,6 +35,7 @@ export default function AdminPage() {
 
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
+  const [feeSchedules, setFeeSchedules] = useState<FeeSchedule[]>([]);
   const [selectedAdminId, setSelectedAdminId] = useState("");
   const [selectedPartnerId, setSelectedPartnerId] = useState("");
   const [newAdminUsername, setNewAdminUsername] = useState("");
@@ -40,11 +48,13 @@ export default function AdminPage() {
   const [isvPassword, setIsvPassword] = useState("");
   const [isvPasswordConfirm, setIsvPasswordConfirm] = useState("");
   const [isvExternalId, setIsvExternalId] = useState("");
+  const [isvFeeScheduleId, setIsvFeeScheduleId] = useState("");
   const [isvLogoFile, setIsvLogoFile] = useState<File | null>(null);
   const [partnerPasswordNew, setPartnerPasswordNew] = useState("");
   const [partnerPasswordNewConfirm, setPartnerPasswordNewConfirm] = useState("");
   const [partnerNameEdit, setPartnerNameEdit] = useState("");
   const [partnerEmailEdit, setPartnerEmailEdit] = useState("");
+  const [partnerFeeScheduleIdEdit, setPartnerFeeScheduleIdEdit] = useState("");
   const [partnerLogoFile, setPartnerLogoFile] = useState<File | null>(null);
   const [createAdminMessage, setCreateAdminMessage] = useState<string | null>(null);
   const [createAdminError, setCreateAdminError] = useState<string | null>(null);
@@ -86,12 +96,23 @@ export default function AdminPage() {
     if (res.data) setPartners(res.data);
   }, [token, clearAdminAndRedirect]);
 
+  const loadFeeSchedules = useCallback(async () => {
+    if (!token) return;
+    const res = await apiGet<FeeSchedule[]>("/admin/fee-schedules", { headers: authHeaders(token) });
+    if (isUnauthorized(res)) {
+      clearAdminAndRedirect();
+      return;
+    }
+    if (res.data) setFeeSchedules(res.data);
+  }, [token, clearAdminAndRedirect]);
+
   useEffect(() => {
     if (token) {
       loadAdmins();
       loadPartners();
+      loadFeeSchedules();
     }
-  }, [token, loadAdmins, loadPartners]);
+  }, [token, loadAdmins, loadPartners, loadFeeSchedules]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -168,6 +189,7 @@ export default function AdminPage() {
     formData.append("name", isvName);
     formData.append("email", isvEmail);
     formData.append("password", isvPassword);
+    formData.append("fee_schedule_id", isvFeeScheduleId);
     if (isvExternalId) formData.append("external_id", isvExternalId);
     if (isvLogoFile) formData.append("logo", isvLogoFile);
     const res = await fetch(`${API_BASE}/admin/partners`, {
@@ -187,6 +209,7 @@ export default function AdminPage() {
     setIsvPassword("");
     setIsvPasswordConfirm("");
     setIsvExternalId("");
+    setIsvFeeScheduleId("");
     setIsvLogoFile(null);
     loadPartners();
   }
@@ -202,10 +225,11 @@ export default function AdminPage() {
         return;
       }
     }
-    const body: { name?: string; email?: string; password?: string } = {};
+    const body: { name?: string; email?: string; password?: string; fee_schedule_id?: string } = {};
     if (partnerNameEdit) body.name = partnerNameEdit;
     if (partnerEmailEdit) body.email = partnerEmailEdit;
     if (partnerPasswordNew) body.password = partnerPasswordNew;
+    if (partnerFeeScheduleIdEdit) body.fee_schedule_id = partnerFeeScheduleIdEdit;
     if (Object.keys(body).length === 0) {
       setUpdatePartnerError("Enter at least one field to update.");
       return;
@@ -298,9 +322,11 @@ export default function AdminPage() {
     if (p) {
       setPartnerNameEdit(p.name);
       setPartnerEmailEdit(p.email);
+      setPartnerFeeScheduleIdEdit(p.fee_schedule_id);
     } else {
       setPartnerNameEdit("");
       setPartnerEmailEdit("");
+      setPartnerFeeScheduleIdEdit("");
     }
   }, [selectedPartnerId, partners]);
 
@@ -370,9 +396,9 @@ export default function AdminPage() {
           {createAdminMessage && <p className="text-path-p2 text-path-primary font-medium mb-2">{createAdminMessage}</p>}
           {createAdminError && <p className="text-path-p2 text-path-secondary mb-2">{createAdminError}</p>}
           <form onSubmit={handleCreateAdmin} className="space-y-3 max-w-md">
-            <input type="text" value={newAdminUsername} onChange={(e) => setNewAdminUsername(e.target.value)} placeholder="Username" required className="w-full border border-path-grey-300 rounded px-3 py-2 text-path-p1" />
-            <input type="password" value={newAdminPassword} onChange={(e) => setNewAdminPassword(e.target.value)} placeholder="Password" required minLength={8} className="w-full border border-path-grey-300 rounded px-3 py-2 text-path-p1" />
-            <input type="password" value={newAdminPasswordConfirm} onChange={(e) => setNewAdminPasswordConfirm(e.target.value)} placeholder="Confirm password" required minLength={8} className="w-full border border-path-grey-300 rounded px-3 py-2 text-path-p1" />
+            <input type="text" value={newAdminUsername} onChange={(e) => setNewAdminUsername(e.target.value)} placeholder="Username" required className={inputClass} />
+            <input type="password" value={newAdminPassword} onChange={(e) => setNewAdminPassword(e.target.value)} placeholder="Password" required minLength={8} className={inputClass} />
+            <input type="password" value={newAdminPasswordConfirm} onChange={(e) => setNewAdminPasswordConfirm(e.target.value)} placeholder="Confirm password" required minLength={8} className={inputClass} />
             <button type="submit" className="px-4 py-2 bg-path-primary text-white rounded-lg font-medium hover:bg-path-primary-light-1">Create admin</button>
           </form>
         </section>
@@ -384,30 +410,43 @@ export default function AdminPage() {
           {changePasswordMessage && <p className="text-path-p2 text-path-primary font-medium mb-2">{changePasswordMessage}</p>}
           {changePasswordError && <p className="text-path-p2 text-path-secondary mb-2">{changePasswordError}</p>}
           <form onSubmit={handleChangeAdminPassword} className="space-y-3 max-w-md">
-            <select value={selectedAdminId} onChange={(e) => setSelectedAdminId(e.target.value)} required className="w-full border border-path-grey-300 rounded px-3 py-2 text-path-p1">
+            <select value={selectedAdminId} onChange={(e) => setSelectedAdminId(e.target.value)} required className={inputClass}>
               <option value="">Select administrator</option>
               {admins.map((a) => (
                 <option key={a.id} value={a.id}>{a.username}</option>
               ))}
             </select>
-            <input type="password" value={adminPasswordNew} onChange={(e) => setAdminPasswordNew(e.target.value)} placeholder="New password" required minLength={8} className="w-full border border-path-grey-300 rounded px-3 py-2 text-path-p1" />
-            <input type="password" value={adminPasswordNewConfirm} onChange={(e) => setAdminPasswordNewConfirm(e.target.value)} placeholder="Confirm new password" required minLength={8} className="w-full border border-path-grey-300 rounded px-3 py-2 text-path-p1" />
+            <input type="password" value={adminPasswordNew} onChange={(e) => setAdminPasswordNew(e.target.value)} placeholder="New password" required minLength={8} className={inputClass} />
+            <input type="password" value={adminPasswordNewConfirm} onChange={(e) => setAdminPasswordNewConfirm(e.target.value)} placeholder="Confirm new password" required minLength={8} className={inputClass} />
             <button type="submit" className="px-4 py-2 bg-path-primary text-white rounded-lg font-medium hover:bg-path-primary-light-1">Update password</button>
           </form>
         </section>
 
+        {/* 2b. Fee Schedules */}
+        <FeeSchedulesSection token={token} feeSchedules={feeSchedules} loadFeeSchedules={loadFeeSchedules} authHeaders={authHeaders} clearAdminAndRedirect={clearAdminAndRedirect} />
+
         {/* 3. Setup New Partnership Account */}
         <section className="border border-path-grey-300 rounded-lg p-4">
           <h2 className="text-path-h4 font-poppins text-path-primary mb-3">Setup a New Partnership Account</h2>
-          <p className="text-path-p2 text-path-grey-600 mb-3">Create a new partner with name, email, password. Optional logo (max 512KB for welcome screen).</p>
+          <p className="text-path-p2 text-path-grey-600 mb-3">Create a new partner with name, email, password. Requires a fee schedule. Optional logo (max 512KB for welcome screen).</p>
           {setupPartnerMessage && <p className="text-path-p2 text-path-primary font-medium mb-2">{setupPartnerMessage}</p>}
           {setupPartnerError && <p className="text-path-p2 text-path-secondary mb-2">{setupPartnerError}</p>}
           <form onSubmit={handleSetupIsv} className="space-y-3 max-w-md">
-            <input type="text" value={isvName} onChange={(e) => setIsvName(e.target.value)} placeholder="Name (e.g. Order Champ)" required className="w-full border border-path-grey-300 rounded px-3 py-2 text-path-p1" />
-            <input type="email" value={isvEmail} onChange={(e) => setIsvEmail(e.target.value)} placeholder="Email" required className="w-full border border-path-grey-300 rounded px-3 py-2 text-path-p1" />
-            <input type="password" value={isvPassword} onChange={(e) => setIsvPassword(e.target.value)} placeholder="Password" required minLength={8} className="w-full border border-path-grey-300 rounded px-3 py-2 text-path-p1" />
-            <input type="password" value={isvPasswordConfirm} onChange={(e) => setIsvPasswordConfirm(e.target.value)} placeholder="Confirm password" required minLength={8} className="w-full border border-path-grey-300 rounded px-3 py-2 text-path-p1" />
-            <input type="text" value={isvExternalId} onChange={(e) => setIsvExternalId(e.target.value)} placeholder="External ID (optional)" className="w-full border border-path-grey-300 rounded px-3 py-2 text-path-p1" />
+            <input type="text" value={isvName} onChange={(e) => setIsvName(e.target.value)} placeholder="Name (e.g. Order Champ)" required className={inputClass} />
+            <input type="email" value={isvEmail} onChange={(e) => setIsvEmail(e.target.value)} placeholder="Email" required className={inputClass} />
+            <input type="password" value={isvPassword} onChange={(e) => setIsvPassword(e.target.value)} placeholder="Password" required minLength={8} className={inputClass} />
+            <input type="password" value={isvPasswordConfirm} onChange={(e) => setIsvPasswordConfirm(e.target.value)} placeholder="Confirm password" required minLength={8} className={inputClass} />
+            <div>
+              <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Fee schedule (required)</label>
+              <select value={isvFeeScheduleId} onChange={(e) => setIsvFeeScheduleId(e.target.value)} required className={inputClass}>
+                <option value="">Select fee schedule</option>
+                {feeSchedules.map((fs) => (
+                  <option key={fs.id} value={fs.id}>{fs.name}</option>
+                ))}
+              </select>
+              {feeSchedules.length === 0 && <p className="text-path-p2 text-path-grey-500 mt-1">Create a fee schedule first.</p>}
+            </div>
+            <input type="text" value={isvExternalId} onChange={(e) => setIsvExternalId(e.target.value)} placeholder="External ID (optional)" className={inputClass} />
             <div>
               <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Logo (optional, max 512KB)</label>
               <input type="file" accept=".png,.jpg,.jpeg,.svg,.webp" onChange={(e) => setIsvLogoFile(e.target.files?.[0] ?? null)} className="w-full text-path-p2" />
@@ -423,7 +462,7 @@ export default function AdminPage() {
           {updatePartnerMessage && <p className="text-path-p2 text-path-primary font-medium mb-2">{updatePartnerMessage}</p>}
           {updatePartnerError && <p className="text-path-p2 text-path-secondary mb-2">{updatePartnerError}</p>}
           <form onSubmit={handleUpdatePartner} className="space-y-3 max-w-md">
-            <select value={selectedPartnerId} onChange={(e) => { setSelectedPartnerId(e.target.value); const p = partners.find(x => x.id === e.target.value); if (p) { setPartnerNameEdit(p.name); setPartnerEmailEdit(p.email); } setPartnerLogoFile(null); }} className="w-full border border-path-grey-300 rounded px-3 py-2 text-path-p1">
+            <select value={selectedPartnerId} onChange={(e) => { setSelectedPartnerId(e.target.value); const p = partners.find(x => x.id === e.target.value); if (p) { setPartnerNameEdit(p.name); setPartnerEmailEdit(p.email); setPartnerFeeScheduleIdEdit(p.fee_schedule_id); } setPartnerLogoFile(null); }} className={inputClass}>
               <option value="">Select partner</option>
               {partners.map((p) => (
                 <option key={p.id} value={p.id}>{p.name} ({p.email})</option>
@@ -447,10 +486,18 @@ export default function AdminPage() {
                     <button type="button" onClick={handleRemovePartnerLogo} className="px-4 py-2 border border-path-grey-300 rounded-lg text-path-p2 hover:bg-path-grey-100">Remove logo</button>
                   )}
                 </div>
-                <input type="text" value={partnerNameEdit} onChange={(e) => setPartnerNameEdit(e.target.value)} placeholder="Name" className="w-full border border-path-grey-300 rounded px-3 py-2 text-path-p1" />
-                <input type="email" value={partnerEmailEdit} onChange={(e) => setPartnerEmailEdit(e.target.value)} placeholder="Email" className="w-full border border-path-grey-300 rounded px-3 py-2 text-path-p1" />
-                <input type="password" value={partnerPasswordNew} onChange={(e) => setPartnerPasswordNew(e.target.value)} placeholder="New password (leave blank to keep)" minLength={8} className="w-full border border-path-grey-300 rounded px-3 py-2 text-path-p1" />
-                <input type="password" value={partnerPasswordNewConfirm} onChange={(e) => setPartnerPasswordNewConfirm(e.target.value)} placeholder="Confirm new password" minLength={8} className="w-full border border-path-grey-300 rounded px-3 py-2 text-path-p1" />
+                <input type="text" value={partnerNameEdit} onChange={(e) => setPartnerNameEdit(e.target.value)} placeholder="Name" className={inputClass} />
+                <input type="email" value={partnerEmailEdit} onChange={(e) => setPartnerEmailEdit(e.target.value)} placeholder="Email" className={inputClass} />
+                <div>
+                  <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Fee schedule</label>
+                  <select value={partnerFeeScheduleIdEdit} onChange={(e) => setPartnerFeeScheduleIdEdit(e.target.value)} className={inputClass}>
+                    {feeSchedules.map((fs) => (
+                      <option key={fs.id} value={fs.id}>{fs.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <input type="password" value={partnerPasswordNew} onChange={(e) => setPartnerPasswordNew(e.target.value)} placeholder="New password (leave blank to keep)" minLength={8} className={inputClass} />
+                <input type="password" value={partnerPasswordNewConfirm} onChange={(e) => setPartnerPasswordNewConfirm(e.target.value)} placeholder="Confirm new password" minLength={8} className={inputClass} />
               </>
             )}
             <div className="flex flex-wrap gap-3">
@@ -459,11 +506,413 @@ export default function AdminPage() {
             </div>
           </form>
         </section>
+
+        {/* 5. Product Packages (Admin) */}
+        <AdminProductPackagesSection
+          token={token}
+          partners={partners}
+          authHeaders={authHeaders}
+          clearAdminAndRedirect={clearAdminAndRedirect}
+        />
       </div>
 
       <footer className="mt-12 pt-6 border-t border-path-grey-200 text-path-p2 text-path-grey-500">
         © 2026 Path2ai.tech
       </footer>
     </main>
+  );
+}
+
+function FeeSchedulesSection({
+  token,
+  feeSchedules,
+  loadFeeSchedules,
+  authHeaders,
+  clearAdminAndRedirect,
+}: {
+  token: string | null;
+  feeSchedules: FeeSchedule[];
+  loadFeeSchedules: () => Promise<void>;
+  authHeaders: (t: string) => { Authorization: string };
+  clearAdminAndRedirect: () => void;
+}) {
+  const [newScheduleName, setNewScheduleName] = useState("");
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editRates, setEditRates] = useState<Record<string, Record<string, number>>>({});
+  const [productSchema, setProductSchema] = useState<Record<string, { label: string; [k: string]: unknown }>>({});
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    (async () => {
+      const res = await apiGet<{ products: Record<string, { label: string; [k: string]: unknown }> }>("/admin/fee-schedule-schema", { headers: authHeaders(token) });
+      if (res.data?.products) setProductSchema(res.data.products);
+    })();
+  }, [token, authHeaders]);
+
+  async function handleCreateSchedule(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setMessage(null);
+    if (!token || !newScheduleName.trim()) return;
+    const res = await apiPost<FeeSchedule>("/admin/fee-schedules", { name: newScheduleName.trim() }, { headers: authHeaders(token) });
+    if (res.error) {
+      if (isUnauthorized(res)) { clearAdminAndRedirect(); return; }
+      setError(res.error);
+      return;
+    }
+    setMessage("Fee schedule created.");
+    setNewScheduleName("");
+    loadFeeSchedules();
+  }
+
+  const RATE_KEYS = ["min_pct", "min_amount", "min_per_month", "min_per_device", "min_service"];
+
+  function startEdit(s: FeeSchedule) {
+    setEditingScheduleId(s.id);
+    setEditName(s.name);
+    const merged: Record<string, Record<string, number>> = {};
+    const codes = Object.keys(productSchema).length > 0 ? Object.keys(productSchema) : Object.keys(s.rates || {});
+    for (const code of codes) {
+      const schema = productSchema[code];
+      const fromSchema: Record<string, number> = {};
+      if (schema) {
+        for (const k of RATE_KEYS) {
+          const v = schema[k];
+          if (typeof v === "number") fromSchema[k] = v;
+        }
+      }
+      merged[code] = { ...fromSchema, ...(s.rates?.[code] || {}) };
+    }
+    setEditRates(merged);
+    setError(null);
+    setMessage(null);
+  }
+
+  async function handleSaveSchedule(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setMessage(null);
+    if (!token || !editingScheduleId) return;
+    const res = await apiPatch<FeeSchedule>(`/admin/fee-schedules/${editingScheduleId}`, { name: editName, rates: editRates }, { headers: authHeaders(token) });
+    if (res.error) {
+      if (isUnauthorized(res)) { clearAdminAndRedirect(); return; }
+      setError(res.error);
+      return;
+    }
+    setMessage("Fee schedule updated.");
+    setEditingScheduleId(null);
+    loadFeeSchedules();
+  }
+
+  async function handleDeleteSchedule(id: string) {
+    if (!token || !confirm("Delete this fee schedule? Partners using it must be reassigned first.")) return;
+    setError(null);
+    setMessage(null);
+    const res = await apiDelete(`/admin/fee-schedules/${id}`, { headers: authHeaders(token) });
+    if (res.error) {
+      if (isUnauthorized(res)) { clearAdminAndRedirect(); return; }
+      setError(res.error);
+      return;
+    }
+    setMessage("Fee schedule deleted.");
+    setEditingScheduleId(null);
+    loadFeeSchedules();
+  }
+
+  return (
+    <section className="border border-path-grey-300 rounded-lg p-4">
+      <h2 className="text-path-h4 font-poppins text-path-primary mb-3">Fee Schedules</h2>
+      <p className="text-path-p2 text-path-grey-600 mb-3">Define minimum fees per product. Create schedules and assign them to partners. One schedule can serve many partners.</p>
+      {message && <p className="text-path-p2 text-path-primary font-medium mb-2">{message}</p>}
+      {error && <p className="text-path-p2 text-path-secondary mb-2">{error}</p>}
+
+      <div className="space-y-4">
+        <form onSubmit={handleCreateSchedule} className="flex gap-2 flex-wrap items-end">
+          <div className="min-w-[200px]">
+            <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Create new (from defaults)</label>
+            <input type="text" value={newScheduleName} onChange={(e) => setNewScheduleName(e.target.value)} placeholder="e.g. Standard Retail" required className={inputClass} />
+          </div>
+          <button type="submit" className="px-4 py-2 bg-path-primary text-white rounded-lg font-medium hover:bg-path-primary-light-1">Create</button>
+        </form>
+
+        <div className="space-y-2">
+          {feeSchedules.map((s) => (
+            <div key={s.id} className="flex items-center gap-3 p-2 border border-path-grey-200 rounded">
+              <span className="font-medium flex-1">{s.name}</span>
+              <button type="button" onClick={() => startEdit(s)} className="px-3 py-1 border border-path-grey-300 rounded text-path-p2 hover:bg-path-grey-100">Edit</button>
+              <button type="button" onClick={() => handleDeleteSchedule(s.id)} className="px-3 py-1 border border-path-secondary text-path-secondary rounded text-path-p2 hover:bg-path-grey-100">Delete</button>
+            </div>
+          ))}
+        </div>
+
+        {editingScheduleId && (
+          <form onSubmit={handleSaveSchedule} className="p-4 border border-path-grey-300 rounded-lg space-y-4 bg-path-grey-50">
+            <h3 className="font-medium">Edit fee schedule</h3>
+            <div>
+              <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Name</label>
+              <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} required className={inputClass} />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {Object.entries(editRates).map(([code, rates]) => (
+                <div key={code} className="p-3 bg-white border border-path-grey-200 rounded space-y-2">
+                  <span className="font-medium text-path-p2">{productSchema[code]?.label ?? code}</span>
+                  <div className="space-y-1">
+                    {"min_pct" in rates && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-path-p2 w-24">Min %</label>
+                        <input type="number" step="0.1" value={rates.min_pct ?? ""} onChange={(e) => setEditRates((prev) => ({ ...prev, [code]: { ...prev[code], min_pct: parseFloat(e.target.value) || 0 } }))} className="w-20 border border-path-grey-300 rounded px-2 py-1 text-path-p1" />
+                      </div>
+                    )}
+                    {"min_amount" in rates && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-path-p2 w-24">Min £</label>
+                        <input type="number" step="0.01" value={rates.min_amount ?? ""} onChange={(e) => setEditRates((prev) => ({ ...prev, [code]: { ...prev[code], min_amount: parseFloat(e.target.value) || 0 } }))} className="w-20 border border-path-grey-300 rounded px-2 py-1 text-path-p1" />
+                      </div>
+                    )}
+                    {"min_per_month" in rates && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-path-p2 w-24">Per month £</label>
+                        <input type="number" step="1" value={rates.min_per_month ?? ""} onChange={(e) => setEditRates((prev) => ({ ...prev, [code]: { ...prev[code], min_per_month: parseFloat(e.target.value) || 0 } }))} className="w-20 border border-path-grey-300 rounded px-2 py-1 text-path-p1" />
+                      </div>
+                    )}
+                    {"min_per_device" in rates && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-path-p2 w-24">Per device £</label>
+                        <input type="number" step="1" value={rates.min_per_device ?? ""} onChange={(e) => setEditRates((prev) => ({ ...prev, [code]: { ...prev[code], min_per_device: parseFloat(e.target.value) || 0 } }))} className="w-20 border border-path-grey-300 rounded px-2 py-1 text-path-p1" />
+                      </div>
+                    )}
+                    {"min_service" in rates && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-path-p2 w-24">Service £</label>
+                        <input type="number" step="0.01" value={rates.min_service ?? ""} onChange={(e) => setEditRates((prev) => ({ ...prev, [code]: { ...prev[code], min_service: parseFloat(e.target.value) || 0 } }))} className="w-20 border border-path-grey-300 rounded px-2 py-1 text-path-p1" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" className="px-4 py-2 bg-path-primary text-white rounded-lg font-medium hover:bg-path-primary-light-1">Save</button>
+              <button type="button" onClick={() => setEditingScheduleId(null)} className="px-4 py-2 border border-path-grey-300 rounded-lg text-path-p2 hover:bg-path-grey-100">Cancel</button>
+            </div>
+          </form>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function AdminProductPackagesSection({
+  token,
+  partners,
+  authHeaders,
+  clearAdminAndRedirect,
+}: {
+  token: string | null;
+  partners: Partner[];
+  authHeaders: (t: string) => { Authorization: string };
+  clearAdminAndRedirect: () => void;
+}) {
+  const [pkgPartnerId, setPkgPartnerId] = useState("");
+  const [packages, setPackages] = useState<ProductPackage[]>([]);
+  const [catalog, setCatalog] = useState<CatalogProduct[]>([]);
+  const [feeScheduleRates, setFeeScheduleRates] = useState<Record<string, Record<string, number>>>({});
+  const [loading, setLoading] = useState(false);
+  const [showCreateWizard, setShowCreateWizard] = useState(false);
+  const [wizardStep, setWizardStep] = useState(1);
+  const [wizardItems, setWizardItems] = useState<WizardItem[]>([]);
+  const [wizardName, setWizardName] = useState("");
+  const [wizardDesc, setWizardDesc] = useState("");
+  const [wizardError, setWizardError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [editingPackageId, setEditingPackageId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    (async () => {
+      const res = await apiGet<CatalogProduct[]>("/admin/product-catalog", { headers: authHeaders(token) });
+      if (cancelled) return;
+      if (res.error && (res as { statusCode?: number }).statusCode === 401) {
+        clearAdminAndRedirect();
+        return;
+      }
+      if (res.data) setCatalog(res.data);
+    })();
+    return () => { cancelled = true; };
+  }, [token, authHeaders, clearAdminAndRedirect]);
+
+  useEffect(() => {
+    if (!token || !pkgPartnerId) {
+      setPackages([]);
+      setFeeScheduleRates({});
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    const partner = partners.find((p) => p.id === pkgPartnerId);
+    (async () => {
+      const [pkgRes, feeRes] = await Promise.all([
+        apiGet<ProductPackage[]>(`/admin/partners/${pkgPartnerId}/product-packages`, { headers: authHeaders(token) }),
+        partner?.fee_schedule_id
+          ? apiGet<FeeSchedule>(`/admin/fee-schedules/${partner.fee_schedule_id}`, { headers: authHeaders(token) })
+          : Promise.resolve({ data: null as FeeSchedule | null }),
+      ]);
+      if (cancelled) return;
+      if (pkgRes.error && (pkgRes as { statusCode?: number }).statusCode === 401) {
+        clearAdminAndRedirect();
+        return;
+      }
+      if (pkgRes.data) setPackages(pkgRes.data);
+      if (feeRes.data?.rates) setFeeScheduleRates(feeRes.data.rates);
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [token, pkgPartnerId, partners, authHeaders, clearAdminAndRedirect]);
+
+  return (
+    <section className="border border-path-grey-300 rounded-lg p-4">
+      <h2 className="text-path-h4 font-poppins text-path-primary mb-3">Product Packages</h2>
+      <p className="text-path-p2 text-path-grey-600 mb-3">Manage product packages for a partner. Select a partner to view and create packages.</p>
+      {successMsg && <p className="text-path-p2 text-path-primary font-medium mb-2">{successMsg}</p>}
+      <div className="space-y-4">
+        <div>
+          <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Partner</label>
+          <select
+            value={pkgPartnerId}
+            onChange={(e) => { setPkgPartnerId(e.target.value); setShowCreateWizard(false); }}
+            className={inputClass}
+          >
+            <option value="">Select partner</option>
+            {partners.map((p) => (
+              <option key={p.id} value={p.id}>{p.name} ({p.email})</option>
+            ))}
+          </select>
+        </div>
+        {!showCreateWizard ? (
+          <>
+            {pkgPartnerId && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingPackageId(null);
+                  setShowCreateWizard(true);
+                  setWizardStep(1);
+                  setWizardItems([]);
+                  setWizardName("");
+                  setWizardDesc("");
+                  setWizardError(null);
+                  setSuccessMsg(null);
+                }}
+                className="px-4 py-2 bg-path-primary text-white rounded-lg font-medium hover:bg-path-primary-light-1"
+              >
+                Create package
+              </button>
+            )}
+            {loading ? (
+              <p className="text-path-p2 text-path-grey-600">Loading packages…</p>
+            ) : (
+              <ul className="space-y-2">
+                {packages.map((p) => (
+                  <li key={p.id} className="flex items-center justify-between border border-path-grey-200 rounded-lg p-3">
+                    <div>
+                      <span className="font-medium">{p.name}</span>
+                      <span className="text-path-grey-500 ml-2">({p.uid})</span>
+                      {p.description && <p className="text-path-p2 text-path-grey-600 mt-1">{p.description}</p>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-path-p2 text-path-grey-500">{p.items.length} items</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingPackageId(p.id);
+                          setWizardName(p.name);
+                          setWizardDesc(p.description ?? "");
+                          setWizardItems(
+                            p.items.map((it, i) => ({
+                              catalog_product_id: it.catalog_product_id,
+                              config: it.config ?? {},
+                              sort_order: it.sort_order ?? i,
+                            }))
+                          );
+                          setWizardStep(1);
+                          setWizardError(null);
+                          setSuccessMsg(null);
+                          setShowCreateWizard(true);
+                        }}
+                        className="px-3 py-1 text-path-p2 border border-path-grey-300 rounded hover:bg-path-grey-100"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!confirm(`Delete package "${p.name}"? This cannot be undone.`)) return;
+                          if (!token || !pkgPartnerId) return;
+                          const res = await apiDelete(`/admin/partners/${pkgPartnerId}/product-packages/${p.id}`, { headers: authHeaders(token) });
+                          if (res.error) {
+                            setSuccessMsg(null);
+                            alert(res.error);
+                            return;
+                          }
+                          setPackages((prev) => prev.filter((x) => x.id !== p.id));
+                          setSuccessMsg("Package deleted.");
+                        }}
+                        className="px-3 py-1 text-path-p2 border border-path-secondary text-path-secondary rounded hover:bg-path-grey-100"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </li>
+                ))}
+                {pkgPartnerId && packages.length === 0 && !loading && (
+                  <li className="text-path-p2 text-path-grey-500">No packages yet. Create one to get started.</li>
+                )}
+              </ul>
+            )}
+          </>
+        ) : (
+          <ProductPackageWizard
+            catalog={catalog}
+            feeScheduleRates={feeScheduleRates}
+            wizardStep={wizardStep}
+            setWizardStep={setWizardStep}
+            wizardItems={wizardItems}
+            setWizardItems={setWizardItems}
+            wizardName={wizardName}
+            setWizardName={setWizardName}
+            wizardDesc={wizardDesc}
+            setWizardDesc={setWizardDesc}
+            wizardError={wizardError}
+            setWizardError={setWizardError}
+            onCancel={() => { setShowCreateWizard(false); setEditingPackageId(null); }}
+            onSuccess={(uid) => {
+              setShowCreateWizard(false);
+              setEditingPackageId(null);
+              setSuccessMsg(editingPackageId ? "Package updated." : `Package created. UID: ${uid}`);
+              if (token && pkgPartnerId) {
+                apiGet<ProductPackage[]>(`/admin/partners/${pkgPartnerId}/product-packages`, { headers: authHeaders(token) }).then((r) => {
+                  if (r.data) setPackages(r.data);
+                });
+              }
+            }}
+            createPackage={async (payload) => {
+              if (!token || !pkgPartnerId) return { error: "Select a partner" };
+              if (editingPackageId) {
+                const res = await apiPatch<{ uid: string }>(`/admin/partners/${pkgPartnerId}/product-packages/${editingPackageId}`, payload, { headers: authHeaders(token) });
+                if (res.error) return { error: res.error };
+                return { uid: res.data?.uid ?? "" };
+              }
+              const res = await apiPost<{ uid: string }>(`/admin/partners/${pkgPartnerId}/product-packages`, payload, { headers: authHeaders(token) });
+              if (res.error) return { error: res.error };
+              return { uid: res.data?.uid ?? "" };
+            }}
+          />
+        )}
+      </div>
+    </section>
   );
 }

@@ -22,6 +22,8 @@ from app.models.verification_code import VerificationCode
 from app.schemas.boarding import (
     InviteInfoResponse,
     InviteInfoPartner,
+    ProductPackageDisplay,
+    ProductPackageItemDisplay,
     Step1Submit,
     Step1Response,
     Step2Submit,
@@ -89,6 +91,9 @@ def get_saved_data(
         # Step 5 business details
         "vat_number": getattr(contact, "vat_number", None),
         "customer_industry": getattr(contact, "customer_industry", None),
+        "estimated_monthly_card_volume": getattr(contact, "estimated_monthly_card_volume", None),
+        "average_transaction_value": getattr(contact, "average_transaction_value", None),
+        "delivery_timeframe": getattr(contact, "delivery_timeframe", None),
         "customer_support_email": getattr(contact, "customer_support_email", None),
         "customer_websites": getattr(contact, "customer_websites", None),
         "product_description": getattr(contact, "product_description", None),
@@ -119,11 +124,42 @@ def get_invite_info(
     if not partner:
         raise HTTPException(status_code=404, detail="Invalid link")
 
+    product_package = None
+    if invite.product_package_id and invite.product_package:
+        pkg = invite.product_package
+        item_by_id = {it.id: it for it in pkg.items}
+        items = []
+        for idx, dd in enumerate(invite.device_details):
+            it = item_by_id.get(dd.package_item_id)
+            if not it:
+                continue
+            cat = it.catalog_product
+            items.append(
+                ProductPackageItemDisplay(
+                    id=f"{it.id}-{idx}",
+                    product_code=cat.product_code if cat else "",
+                    product_name=cat.name if cat else "",
+                    product_type=cat.product_type if cat else "",
+                    config=it.config,
+                    store_name=dd.store_name,
+                    store_address=dd.store_address,
+                    epos_terminal=dd.epos_terminal,
+                )
+            )
+        product_package = ProductPackageDisplay(
+            id=pkg.id,
+            uid=pkg.uid,
+            name=pkg.name,
+            description=pkg.description,
+            items=items,
+        )
+
     return InviteInfoResponse(
         partner=InviteInfoPartner(name=partner.name, logo_url=partner.logo_url),
         merchant_name=invite.merchant_name,
         boarding_event_id=event.id,
         valid=True,
+        product_package=product_package,
     )
 
 
@@ -508,6 +544,12 @@ def save_for_later(
         contact.vat_number = body.vat_number
     if body.customer_industry is not None:
         contact.customer_industry = body.customer_industry
+    if body.estimated_monthly_card_volume is not None:
+        contact.estimated_monthly_card_volume = body.estimated_monthly_card_volume
+    if body.average_transaction_value is not None:
+        contact.average_transaction_value = body.average_transaction_value
+    if body.delivery_timeframe is not None:
+        contact.delivery_timeframe = body.delivery_timeframe
     if body.customer_support_email is not None:
         contact.customer_support_email = body.customer_support_email
     if body.customer_websites is not None:
