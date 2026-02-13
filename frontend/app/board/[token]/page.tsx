@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import SumsubWebSdk from "@sumsub/websdk-react";
 import { API_BASE, apiGet, apiPost } from "@/lib/api";
@@ -100,6 +100,7 @@ function BoardingRightPanel({
 
 export default function BoardingEntryPage() {
   const params = useParams();
+  const router = useRouter();
   const token = typeof params.token === "string" ? params.token : "";
 
   const [inviteInfo, setInviteInfo] = useState<InviteInfo | null>(null);
@@ -458,6 +459,11 @@ export default function BoardingEntryPage() {
           address_town?: string;
           phone_country_code?: string;
           phone_number?: string;
+          vat_number?: string;
+          customer_industry?: string;
+          customer_support_email?: string;
+          customer_websites?: string;
+          product_description?: string;
         }>(`/boarding/saved-data?token=${encodeURIComponent(token)}`);
         if (cancelled) return;
         if (res.data?.has_data) {
@@ -511,6 +517,13 @@ export default function BoardingEntryPage() {
             setPhoneNumber(res.data.phone_number);
             setVerifiedFields((f) => ({ ...f, phone: true }));
           }
+          
+          // Pre-populate step 5 business details
+          if (res.data.vat_number != null) setVatNumber(res.data.vat_number);
+          if (res.data.customer_industry != null) setCustomerIndustry(res.data.customer_industry);
+          if (res.data.customer_support_email != null) setCustomerSupportEmail(res.data.customer_support_email);
+          if (res.data.customer_websites != null) setCustomerWebsites(res.data.customer_websites);
+          if (res.data.product_description != null) setProductDescription(res.data.product_description);
           
           // Navigate to the correct step based on current_step
           if (res.data.email_verified && res.data.current_step) {
@@ -858,9 +871,19 @@ export default function BoardingEntryPage() {
   async function handleSaveForLater() {
     setSaveForLaterLoading(true);
     try {
+      const payload: { current_step: string; vat_number?: string; customer_industry?: string; customer_support_email?: string; customer_websites?: string; product_description?: string } = {
+        current_step: step,
+      };
+      if (step === "step5") {
+        payload.vat_number = vatNumber;
+        payload.customer_industry = customerIndustry;
+        payload.customer_support_email = customerSupportEmail;
+        payload.customer_websites = customerWebsites;
+        payload.product_description = productDescription;
+      }
       const res = await apiPost<{ sent: boolean; message: string }>(
         `/boarding/save-for-later?token=${encodeURIComponent(token)}`,
-        {}
+        payload
       );
       if (res.error) {
         alert(res.error);
@@ -1426,8 +1449,7 @@ export default function BoardingEntryPage() {
                     onClick={() => {
                       setShowSaveForLaterModal(false);
                       setSaveForLaterSuccess(false);
-                      // Optional: redirect to home or show a thank you page
-                      window.location.href = "/";
+                      router.push("/");
                     }}
                     className="w-full px-4 py-2 bg-path-primary text-white rounded-lg hover:bg-path-primary-light-1 transition-colors"
                   >
@@ -1674,8 +1696,7 @@ export default function BoardingEntryPage() {
                     onClick={() => {
                       setShowSaveForLaterModal(false);
                       setSaveForLaterSuccess(false);
-                      // Optional: redirect to home or show a thank you page
-                      window.location.href = "/";
+                      router.push("/");
                     }}
                     className="w-full px-4 py-2 bg-path-primary text-white rounded-lg hover:bg-path-primary-light-1 transition-colors"
                   >
@@ -1918,7 +1939,8 @@ export default function BoardingEntryPage() {
               const allCorpsComplete = corporateShareholders.length === 0 || corporateShareholders.every(
                 (c) => c.beneficialOwners.length > 0 && c.beneficialOwners.some(isBeneficialOwnerComplete)
               );
-              const showBeneficialOwnerForm = pscConfirmed === false || !allCorpsComplete;
+              const directorsEditable = pscConfirmed === false;
+              const canContinue = pscConfirmed === true && (corporateShareholders.length === 0 || allCorpsComplete);
               return (
               <div className="mb-8 pt-8 border-t border-path-grey-200">
                 <h2 className="text-path-h3 font-poppins text-path-grey-900 mb-4">Ownership & control</h2>
@@ -1935,9 +1957,9 @@ export default function BoardingEntryPage() {
                               <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                             </svg>
                           </span>
-                          {pscConfirmed === false ? "Owner details" : (psc.fullLegalName || "Unnamed") + ` – ${psc.ownership}%`}
+                          {directorsEditable ? "Owner details" : (psc.fullLegalName || "Unnamed") + ` – ${psc.ownership}%`}
                         </span>
-                        {pscConfirmed === false && (
+                        {directorsEditable && (
                           <button
                             type="button"
                             onClick={() => setPscs((prev) => prev.filter((p) => p.id !== psc.id))}
@@ -1950,7 +1972,7 @@ export default function BoardingEntryPage() {
                           </button>
                         )}
                       </div>
-                      {pscConfirmed === false ? (
+                      {directorsEditable ? (
                         <div className="space-y-4">
                           <div>
                             <label className="block text-path-p2 text-path-grey-600 mb-1">Full legal name</label>
@@ -2098,7 +2120,7 @@ export default function BoardingEntryPage() {
                     </div>
                   ))}
                 </div>
-                {pscConfirmed === false && (
+                {directorsEditable && (
                   <button
                     type="button"
                     onClick={() =>
@@ -2116,7 +2138,32 @@ export default function BoardingEntryPage() {
                   </button>
                 )}
 
-                {/* Corporate shareholders – beneficial ownership (only for complex flow) */}
+                {/* Directors confirmation: Yes/No – comes after listed directors, before additional ownership */}
+                <p className="text-path-p1 text-path-grey-700 mb-4">Are these director details correct?</p>
+                <div className="space-y-4 mb-6">
+                  <label className="flex items-center gap-3 cursor-pointer p-4 border border-path-grey-200 rounded-lg hover:border-path-primary hover:bg-path-grey-50 transition-colors has-[:checked]:border-path-primary has-[:checked]:bg-path-primary/5">
+                    <input
+                      type="radio"
+                      name="pscConfirmed"
+                      checked={pscConfirmed === true}
+                      onChange={() => setPscConfirmed(true)}
+                      className="w-5 h-5 text-path-primary border-path-grey-300 focus:ring-path-primary"
+                    />
+                    <span className="text-path-p1 text-path-grey-900 font-medium">Yes, this is correct</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer p-4 border border-path-grey-200 rounded-lg hover:border-path-primary hover:bg-path-grey-50 transition-colors has-[:checked]:border-path-primary has-[:checked]:bg-path-primary/5">
+                    <input
+                      type="radio"
+                      name="pscConfirmed"
+                      checked={pscConfirmed === false}
+                      onChange={() => setPscConfirmed(false)}
+                      className="w-5 h-5 text-path-primary border-path-grey-300 focus:ring-path-primary"
+                    />
+                    <span className="text-path-p1 text-path-grey-900 font-medium">No, I need to update</span>
+                  </label>
+                </div>
+
+                {/* Additional ownership details – corporate shareholders (only for complex flow) */}
                 {corporateShareholders.length > 0 && (
                   <div className="mb-6 pt-6 border-t border-path-grey-200">
                     <h3 className="text-path-p1 font-semibold text-path-grey-900 mb-2">Additional ownership details required</h3>
@@ -2138,31 +2185,28 @@ export default function BoardingEntryPage() {
                             <div key={ubo.id} className="p-4 border border-path-grey-200 rounded-lg bg-white">
                               <div className="flex items-center justify-between mb-4">
                                 <span className="text-path-p1 font-medium text-path-grey-900">
-                                  {showBeneficialOwnerForm ? "Owner details" : (ubo.fullLegalName || "Unnamed") + ` – ${ubo.ownership}%`}
+                                  {(ubo.fullLegalName || "Unnamed") + ` – ${ubo.ownership}%`}
                                 </span>
-                                {showBeneficialOwnerForm && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setCorporateShareholders((prev) =>
-                                        prev.map((c) =>
-                                          c.id === corp.id
-                                            ? { ...c, beneficialOwners: c.beneficialOwners.filter((b) => b.id !== ubo.id) }
-                                            : c
-                                        )
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setCorporateShareholders((prev) =>
+                                      prev.map((c) =>
+                                        c.id === corp.id
+                                          ? { ...c, beneficialOwners: c.beneficialOwners.filter((b) => b.id !== ubo.id) }
+                                          : c
                                       )
-                                    }
-                                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                    title="Remove owner"
-                                  >
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                    </svg>
-                                  </button>
-                                )}
+                                    )
+                                  }
+                                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                  title="Remove owner"
+                                >
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </button>
                               </div>
-                              {showBeneficialOwnerForm && (
-                                <div className="space-y-4">
+                              <div className="space-y-4">
                                   <div>
                                     <label className="block text-path-p2 text-path-grey-600 mb-1">Full legal name</label>
                                     <input
@@ -2369,12 +2413,10 @@ export default function BoardingEntryPage() {
                                     </div>
                                   </div>
                                 </div>
-                              )}
                             </div>
                           ))}
                         </div>
-                        {showBeneficialOwnerForm && (
-                          <button
+                        <button
                             type="button"
                             onClick={() =>
                               setCorporateShareholders((prev) =>
@@ -2392,122 +2434,29 @@ export default function BoardingEntryPage() {
                             </svg>
                             Add individual owner
                           </button>
-                        )}
                       </div>
                     ))}
                   </div>
                 )}
 
-                {/* Simple flow: no corporate shareholders – show Yes/No directly */}
-                {/* Complex flow: require beneficial owner info first, then show Yes/No */}
-                {corporateShareholders.length === 0 ? (
-                  <>
-                    <p className="text-path-p1 text-path-grey-700 mb-4">Are these details correct?</p>
-                    <div className="space-y-4">
-                      <label className="flex items-center gap-3 cursor-pointer p-4 border border-path-grey-200 rounded-lg hover:border-path-primary hover:bg-path-grey-50 transition-colors has-[:checked]:border-path-primary has-[:checked]:bg-path-primary/5">
-                        <input
-                          type="radio"
-                          name="pscConfirmed"
-                          checked={pscConfirmed === true}
-                          onChange={() => setPscConfirmed(true)}
-                          className="w-5 h-5 text-path-primary border-path-grey-300 focus:ring-path-primary"
-                        />
-                        <span className="text-path-p1 text-path-grey-900 font-medium">Yes, this is correct</span>
-                      </label>
-                      <label className="flex items-center gap-3 cursor-pointer p-4 border border-path-grey-200 rounded-lg hover:border-path-primary hover:bg-path-grey-50 transition-colors has-[:checked]:border-path-primary has-[:checked]:bg-path-primary/5">
-                        <input
-                          type="radio"
-                          name="pscConfirmed"
-                          checked={pscConfirmed === false}
-                          onChange={() => setPscConfirmed(false)}
-                          className="w-5 h-5 text-path-primary border-path-grey-300 focus:ring-path-primary"
-                        />
-                        <span className="text-path-p1 text-path-grey-900 font-medium">No, I need to update</span>
-                      </label>
-                    </div>
-                  </>
-                ) : (() => {
-                  const isBeneficialOwnerComplete = (ubo: { fullLegalName: string; dateOfBirth: string; residentialPostcode: string; residentialLine1: string; residentialTown: string; nationality: string; ownership: number }) =>
-                    !!ubo.fullLegalName?.trim() && !!ubo.dateOfBirth?.trim() && !!ubo.residentialPostcode?.trim() &&
-                    !!ubo.residentialLine1?.trim() && !!ubo.residentialTown?.trim() && !!ubo.nationality?.trim() && ubo.ownership > 0;
-                  const allCorpsComplete = corporateShareholders.every(
-                    (c) => c.beneficialOwners.length > 0 && c.beneficialOwners.some(isBeneficialOwnerComplete)
-                  );
-                  if (!allCorpsComplete) {
-                    return (
-                      <div className="space-y-4">
-                        {corporateShareholders.map((corp) => {
-                          const corpComplete = corp.beneficialOwners.length > 0 && corp.beneficialOwners.some(isBeneficialOwnerComplete);
-                          if (corpComplete) return null;
-                          if (corp.beneficialOwners.length > 0) return null; // Has owners but incomplete – form is shown in corporate section
-                          return (
-                            <button
-                              key={corp.id}
-                              type="button"
-                              onClick={() => {
-                                if (corp.beneficialOwners.length === 0) {
-                                  setCorporateShareholders((prev) =>
-                                    prev.map((c) =>
-                                      c.id === corp.id
-                                        ? { ...c, beneficialOwners: [{ id: crypto.randomUUID(), fullLegalName: "", dateOfBirth: "", residentialPostcode: "", residentialLine1: "", residentialLine2: "", residentialTown: "", nationality: "", ownership: 0 }] }
-                                        : c
-                                    )
-                                  );
-                                }
-                              }}
-                              className="w-full py-3 px-4 bg-path-primary text-white rounded-lg font-medium hover:bg-path-primary-light-1 transition-colors"
-                            >
-                              Add beneficial owner info for {corp.name}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    );
-                  }
-                  return (
-                    <>
-                      <p className="text-path-p1 text-path-grey-700 mb-4">Are these details correct?</p>
-                      <div className="space-y-4">
-                        <label className="flex items-center gap-3 cursor-pointer p-4 border border-path-grey-200 rounded-lg hover:border-path-primary hover:bg-path-grey-50 transition-colors has-[:checked]:border-path-primary has-[:checked]:bg-path-primary/5">
-                          <input
-                            type="radio"
-                            name="pscConfirmed"
-                            checked={pscConfirmed === true}
-                            onChange={() => setPscConfirmed(true)}
-                            className="w-5 h-5 text-path-primary border-path-grey-300 focus:ring-path-primary"
-                          />
-                          <span className="text-path-p1 text-path-grey-900 font-medium">Yes, this is correct</span>
-                        </label>
-                        <label className="flex items-center gap-3 cursor-pointer p-4 border border-path-grey-200 rounded-lg hover:border-path-primary hover:bg-path-grey-50 transition-colors has-[:checked]:border-path-primary has-[:checked]:bg-path-primary/5">
-                          <input
-                            type="radio"
-                            name="pscConfirmed"
-                            checked={pscConfirmed === false}
-                            onChange={() => setPscConfirmed(false)}
-                            className="w-5 h-5 text-path-primary border-path-grey-300 focus:ring-path-primary"
-                          />
-                          <span className="text-path-p1 text-path-grey-900 font-medium">No, I need to update</span>
-                        </label>
-                      </div>
-                    </>
-                  );
-                })()}
+                {/* Continue – enabled when directors confirmed (and beneficial owners complete for complex flow) */}
+                <div className="mt-8 pt-8 border-t border-path-grey-200">
+                  <button
+                    type="button"
+                    onClick={() => canContinue && setStep("step5")}
+                    disabled={!canContinue}
+                    className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
+                      canContinue
+                        ? "bg-path-primary text-white hover:bg-path-primary-light-1"
+                        : "bg-path-grey-200 text-path-grey-500 cursor-not-allowed"
+                    }`}
+                  >
+                    Continue
+                  </button>
+                </div>
               </div>
             );
             })()}
-
-            {/* Continue – shown when ownership details confirmed */}
-            {pscConfirmed === true && (
-              <div className="mt-8 pt-8 border-t border-path-grey-200">
-                <button
-                  type="button"
-                  onClick={() => setStep("step5")}
-                  className="w-full py-3 px-4 bg-path-primary text-white rounded-lg font-medium hover:bg-path-primary-light-1 transition-colors"
-                >
-                  Continue
-                </button>
-              </div>
-            )}
 
             {/* Sole Trader placeholder */}
             {businessType === "sole_trader" && (
@@ -2570,7 +2519,7 @@ export default function BoardingEntryPage() {
                     onClick={() => {
                       setShowSaveForLaterModal(false);
                       setSaveForLaterSuccess(false);
-                      window.location.href = "/";
+                      router.push("/");
                     }}
                     className="w-full px-4 py-2 bg-path-primary text-white rounded-lg hover:bg-path-primary-light-1 transition-colors"
                   >
@@ -2877,7 +2826,7 @@ export default function BoardingEntryPage() {
                     onClick={() => {
                       setShowSaveForLaterModal(false);
                       setSaveForLaterSuccess(false);
-                      window.location.href = "/";
+                      router.push("/");
                     }}
                     className="w-full px-4 py-2 bg-path-primary text-white rounded-lg hover:bg-path-primary-light-1 transition-colors"
                   >

@@ -82,3 +82,13 @@ class BoardingLoginResponse(BaseModel):
 class SumsubTokenResponse(BaseModel):
     token: str
     user_id: str
+
+
+class SaveForLaterSubmit(BaseModel):
+    current_step: Optional[str] = None  # form, verify, step2, step3, step4, step5
+    # Step 5 business details (optional, for step5)
+    vat_number: Optional[str] = None
+    customer_industry: Optional[str] = None
+    customer_support_email: Optional[str] = None
+    customer_websites: Optional[str] = None
+    product_description: Optional[str] = None

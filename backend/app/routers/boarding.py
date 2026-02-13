@@ -34,6 +34,7 @@ from app.schemas.boarding import (
     TestClearEmailResponse,
     BoardingLoginSubmit,
     BoardingLoginResponse,
+    SaveForLaterSubmit,
 )
 from app.services.email import send_verification_code_email, send_save_for_later_email
 
@@ -85,6 +86,12 @@ def get_saved_data(
         "address_town": contact.address_town,
         "phone_country_code": contact.phone_country_code,
         "phone_number": contact.phone_number,
+        # Step 5 business details
+        "vat_number": getattr(contact, "vat_number", None),
+        "customer_industry": getattr(contact, "customer_industry", None),
+        "customer_support_email": getattr(contact, "customer_support_email", None),
+        "customer_websites": getattr(contact, "customer_websites", None),
+        "product_description": getattr(contact, "product_description", None),
     }
 
 
@@ -475,11 +482,12 @@ def address_lookup(
 @router.post("/save-for-later")
 def save_for_later(
     token: str = Query(..., description="Invite token"),
+    body: SaveForLaterSubmit = ...,
     db: Session = Depends(get_db),
 ):
     """
-    Public: send 'save for later' email to the user.
-    Sends an email with a link to the login page so they can resume their boarding.
+    Public: save progress and send 'save for later' email to the user.
+    Accepts current_step and step5 business details to persist before sending email.
     """
     invite = db.query(Invite).filter(Invite.token == token).first()
     if not invite:
@@ -492,6 +500,21 @@ def save_for_later(
     contact = db.query(BoardingContact).filter(BoardingContact.boarding_event_id == event.id).first()
     if not contact:
         raise HTTPException(status_code=400, detail="No account found. Please create an account first.")
+    
+    # Save progress: current step and step5 data
+    if body.current_step:
+        contact.current_step = body.current_step
+    if body.vat_number is not None:
+        contact.vat_number = body.vat_number
+    if body.customer_industry is not None:
+        contact.customer_industry = body.customer_industry
+    if body.customer_support_email is not None:
+        contact.customer_support_email = body.customer_support_email
+    if body.customer_websites is not None:
+        contact.customer_websites = body.customer_websites
+    if body.product_description is not None:
+        contact.product_description = body.product_description
+    db.commit()
     
     # Get user's name for personalization
     user_name = contact.legal_first_name or "there"

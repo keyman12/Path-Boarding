@@ -33,5 +33,11 @@ class BoardingContact(Base):
     # Step 3 identity verification (SumSub)
     sumsub_applicant_id = Column(String(255), nullable=True)  # SumSub applicant ID
     sumsub_verification_status = Column(String(50), nullable=True)  # pending, completed, rejected
+    # Step 5 business details
+    vat_number = Column(String(32), nullable=True)
+    customer_industry = Column(String(32), nullable=True)
+    customer_support_email = Column(String(255), nullable=True)
+    customer_websites = Column(String(1024), nullable=True)
+    product_description = Column(String(4096), nullable=True)
 
     boarding_event = relationship("BoardingEvent", back_populates="contact")
