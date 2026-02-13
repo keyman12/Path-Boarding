@@ -31,9 +31,10 @@ h1, h2, h3, h4 {
   font-family: var(--font-poppins), sans-serif;
 }
 
-/* Global: Path-colour focus ring (FF8A80) for all inputs and selects */
+/* Global: Path-colour focus ring (FF8A80) for all inputs, selects and textareas */
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   outline: none !important;
   box-shadow: 0 0 0 2px var(--path-secondary-light-1) !important;
   border-color: var(--path-secondary-light-1) !important;

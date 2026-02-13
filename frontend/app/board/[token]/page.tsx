@@ -3,9 +3,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import SumsubWebSdk from "@sumsub/websdk-react";
 import { API_BASE, apiGet, apiPost } from "@/lib/api";
+
+type MccItem = { mcc: string; label: string };
+type UxGroup = { id: string; label: string; items: MccItem[] };
+type UxTaxonomyTier = { id: string; label: string; children: UxGroup[] };
+type MccTaxonomy = { ux_taxonomy: UxTaxonomyTier[] };
 
 type InviteInfo = {
   partner: { name: string; logo_url?: string | null };
@@ -101,7 +106,7 @@ export default function BoardingEntryPage() {
   const [loading, setLoading] = useState(true);
   const [linkError, setLinkError] = useState<string | null>(null);
 
-  const [step, setStep] = useState<"form" | "verify" | "done" | "step2" | "step3" | "step4">("form");
+  const [step, setStep] = useState<"form" | "verify" | "done" | "step2" | "step3" | "step4" | "step5">("form");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -152,6 +157,87 @@ export default function BoardingEntryPage() {
   const [sumsubLoading, setSumsubLoading] = useState(false);
   const [sumsubError, setSumsubError] = useState<string | null>(null);
   const [verificationStatus, setVerificationStatus] = useState<"pending" | "completed" | "rejected" | null>(null);
+
+  // Step 4: Business information
+  const [businessType, setBusinessType] = useState<"ltd" | "llp" | "sole_trader" | "">("");
+  const [companySearchText, setCompanySearchText] = useState("");
+  const [companySearchResults, setCompanySearchResults] = useState<Array<{
+    name: string;
+    number: string;
+    status: "Active" | "Dissolved";
+    registeredOffice: string;
+    fullAddress: string;
+    incorporated: string;
+    industry: string;
+  }>>([]);
+  const [companySearchLoading, setCompanySearchLoading] = useState(false);
+  const [selectedCompany, setSelectedCompany] = useState<{
+    name: string;
+    number: string;
+    status: "Active" | "Dissolved";
+    fullAddress: string;
+    incorporated: string;
+    industry: string;
+    hasCorporateShareholders?: boolean;
+  } | null>(null);
+  const [showCompanyDropdown, setShowCompanyDropdown] = useState(false);
+  const companySearchRef = useRef<HTMLDivElement>(null);
+  const [companyDetailsConfirmed, setCompanyDetailsConfirmed] = useState(false);
+  const [pscConfirmed, setPscConfirmed] = useState<boolean | null>(null);
+  const [pscs, setPscs] = useState<Array<{
+    id: string;
+    fullLegalName: string;
+    dateOfBirth: string;
+    residentialPostcode: string;
+    residentialLine1: string;
+    residentialLine2: string;
+    residentialTown: string;
+    nationality: string;
+    ownership: number;
+  }>>([
+    { id: "1", fullLegalName: "David Key", dateOfBirth: "", residentialPostcode: "", residentialLine1: "", residentialLine2: "", residentialTown: "", nationality: "", ownership: 50 },
+    { id: "2", fullLegalName: "Louise Key", dateOfBirth: "", residentialPostcode: "", residentialLine1: "", residentialLine2: "", residentialTown: "", nationality: "", ownership: 50 },
+  ]);
+  const [corporateShareholders, setCorporateShareholders] = useState<
+    Array<{
+      id: string;
+      name: string;
+      companyNumber: string;
+      ownership: number;
+      beneficialOwners: Array<{
+        id: string;
+        fullLegalName: string;
+        dateOfBirth: string;
+        residentialPostcode: string;
+        residentialLine1: string;
+        residentialLine2: string;
+        residentialTown: string;
+        nationality: string;
+        ownership: number;
+      }>;
+    }>
+  >([
+    {
+      id: "corp-1",
+      name: "HOLDCO LTD",
+      companyNumber: "98765432",
+      ownership: 25,
+      beneficialOwners: [],
+    },
+  ]);
+
+  // Business details (step5)
+  const [vatNumber, setVatNumber] = useState("");
+  const [customerIndustry, setCustomerIndustry] = useState("");
+  const [customerIndustryTier1, setCustomerIndustryTier1] = useState("");
+  const [customerIndustryTier2, setCustomerIndustryTier2] = useState("");
+  const [customerSupportEmail, setCustomerSupportEmail] = useState("");
+  const [customerWebsites, setCustomerWebsites] = useState("");
+  const [productDescription, setProductDescription] = useState("");
+  const [mccTaxonomy, setMccTaxonomy] = useState<MccTaxonomy | null>(null);
+  const [vatNumberError, setVatNumberError] = useState<string | null>(null);
+  const [customerSupportEmailError, setCustomerSupportEmailError] = useState<string | null>(null);
+  const [customerWebsitesError, setCustomerWebsitesError] = useState<string | null>(null);
 
   // Telephone: digits only, 10–15 digits (e.g. UK mobile 07943 490 548 = 11 digits)
   function validatePhoneNumber(value: string): string | null {
@@ -208,6 +294,31 @@ export default function BoardingEntryPage() {
     return UK_POSTCODE_REGEX.test(value.trim().replace(/\s+/g, " "));
   }
 
+  // UK VAT: GB123456789, 123456789, GBGD001, GBHA123, XI123456789
+  const UK_VAT_REGEX = /^(GB\d{9}|GBGD\d{3}|GBHA\d{3}|XI\d{9}|\d{9})$/i;
+  function validateVatNumber(value: string): string | null {
+    const t = value.trim();
+    if (!t) return null; // optional field
+    if (!UK_VAT_REGEX.test(t)) {
+      return "Enter a valid VAT number (e.g. GB123456789, 123456789, GBGD001, GBHA123, XI123456789).";
+    }
+    return null;
+  }
+
+  // Website: must have http/https and a TLD like .com (supports comma-separated)
+  function validateWebsite(value: string): string | null {
+    const t = value.trim();
+    if (!t) return null; // optional
+    const urls = t.split(",").map((u) => u.trim()).filter(Boolean);
+    for (const url of urls) {
+      const hasProtocol = /^https?:\/\//i.test(url);
+      const hasTld = /\.[a-z]{2,}(\.[a-z]{2,})?$/i.test(url);
+      if (!hasProtocol) return "Enter a valid URL starting with http:// or https://";
+      if (!hasTld) return "Enter a valid URL with a domain (e.g. .com, .co.uk)";
+    }
+    return null;
+  }
+
   const EUROPEAN_COUNTRIES = [
     "United Kingdom", "Albania", "Andorra", "Austria", "Belarus", "Belgium", "Bosnia and Herzegovina",
     "Bulgaria", "Croatia", "Cyprus", "Czech Republic", "Denmark", "Estonia", "Finland", "France",
@@ -218,6 +329,38 @@ export default function BoardingEntryPage() {
   ];
 
   const postcodeLookupDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Owner address lookup (for directors/beneficial owners - used when editing owner details)
+  const [ownerAddressLookupTarget, setOwnerAddressLookupTarget] = useState<{ type: "psc"; id: string } | { type: "ubo"; corpId: string; uboId: string } | null>(null);
+  const [ownerAddressLookupResults, setOwnerAddressLookupResults] = useState<{ addressLine1: string; addressLine2: string; town: string; postcode: string }[]>([]);
+  const [ownerAddressLookupLoading, setOwnerAddressLookupLoading] = useState(false);
+  const [ownerAddressLookupError, setOwnerAddressLookupError] = useState<string | null>(null);
+
+  async function fetchAddressLookupForOwner(postcodeValue: string, target: { type: "psc"; id: string } | { type: "ubo"; corpId: string; uboId: string }) {
+    const pc = postcodeValue.trim();
+    if (!pc || !isValidUkPostcode(pc)) return;
+    setOwnerAddressLookupError(null);
+    setOwnerAddressLookupLoading(true);
+    setOwnerAddressLookupResults([]);
+    setOwnerAddressLookupTarget(target);
+    try {
+      const res = await apiGet<{ addressLine1: string; addressLine2: string; town: string; postcode: string }[]>(
+        `/boarding/address-lookup?postcode=${encodeURIComponent(pc)}`
+      );
+      if (res.error) {
+        const msg = typeof res.error === "string" ? res.error : "Could not load addresses.";
+        setOwnerAddressLookupError(msg);
+        return;
+      }
+      const list = Array.isArray(res.data) ? res.data : [];
+      setOwnerAddressLookupResults(list);
+      if (list.length === 0) setOwnerAddressLookupError("No addresses found for this postcode.");
+    } catch {
+      setOwnerAddressLookupError("Could not load addresses. Please enter your address manually.");
+    } finally {
+      setOwnerAddressLookupLoading(false);
+    }
+  }
 
   async function fetchAddressLookup(postcodeValue: string) {
     const pc = postcodeValue.trim();
@@ -384,6 +527,148 @@ export default function BoardingEntryPage() {
       cancelled = true;
     };
   }, [token, inviteInfo]); // run once when we have inviteInfo
+
+  // Pre-populate directors when company is confirmed: matching verified user + Louise for demo
+  const verifiedUserName = [legalFirstName.trim(), legalLastName.trim()].filter(Boolean).join(" ");
+  useEffect(() => {
+    if (!companyDetailsConfirmed) return;
+    setPscs((prev) => {
+      // First pass: fill matching verified user
+      let updated = prev.map((p) => {
+        const nameMatch = verifiedUserName && p.fullLegalName.trim().toLowerCase() === verifiedUserName.toLowerCase();
+        if (!nameMatch) return p;
+        return {
+          ...p,
+          dateOfBirth: p.dateOfBirth || dateOfBirth,
+          residentialPostcode: p.residentialPostcode || addressPostcode,
+          residentialLine1: p.residentialLine1 || addressLine1,
+          residentialLine2: p.residentialLine2 || addressLine2,
+          residentialTown: p.residentialTown || addressTown,
+          nationality: p.nationality || addressCountry,
+        };
+      });
+      // Demo: pre-fill Louise Key with DOB 12/02/1978, same address/nationality as David (or personal details / demo fallback)
+      const david = updated.find((p) => p.fullLegalName.toLowerCase().includes("david key"));
+      const louise = updated.find((p) => p.fullLegalName.toLowerCase().includes("louise key"));
+      if (louise) {
+        const demoPostcode = david?.residentialPostcode || addressPostcode || "SS1 3QU";
+        const demoLine1 = david?.residentialLine1 || addressLine1 || "1 Example Street";
+        const demoLine2 = david?.residentialLine2 || addressLine2 || "";
+        const demoTown = david?.residentialTown || addressTown || "Southend-on-Sea";
+        const demoNationality = david?.nationality || addressCountry || "United Kingdom";
+        updated = updated.map((p) => {
+          if (p.id !== louise.id) return p;
+          return {
+            ...p,
+            dateOfBirth: p.dateOfBirth || "12/02/1978",
+            residentialPostcode: p.residentialPostcode || demoPostcode,
+            residentialLine1: p.residentialLine1 || demoLine1,
+            residentialLine2: p.residentialLine2 || demoLine2,
+            residentialTown: p.residentialTown || demoTown,
+            nationality: p.nationality || demoNationality,
+          };
+        });
+      }
+      return updated;
+    });
+  }, [companyDetailsConfirmed, verifiedUserName, dateOfBirth, addressPostcode, addressLine1, addressLine2, addressTown, addressCountry]);
+
+  // Mock company data for Step 4 (Companies House API to be connected later)
+  const MOCK_COMPANIES = [
+    {
+      name: "PATH PAYMENTS LTD",
+      number: "12345678",
+      status: "Active" as const,
+      registeredOffice: "London",
+      fullAddress: "10 Example Street\nLondon\nSW1A 1AA",
+      incorporated: "12 March 2021",
+      industry: "Financial intermediation",
+      hasCorporateShareholders: true,
+    },
+    {
+      name: "DJIL LTD",
+      number: "11223344",
+      status: "Active" as const,
+      registeredOffice: "London",
+      fullAddress: "15 Demo Road\nLondon\nE1 6AN",
+      incorporated: "5 June 2020",
+      industry: "Information technology",
+      hasCorporateShareholders: false,
+    },
+    {
+      name: "EXAMPLE DISSOLVED LTD",
+      number: "87654321",
+      status: "Dissolved" as const,
+      registeredOffice: "Manchester",
+      fullAddress: "5 Old Road\nManchester\nM1 2AB",
+      incorporated: "1 January 2015",
+      industry: "Retail trade",
+      hasCorporateShareholders: false,
+    },
+  ];
+
+
+  // Debounced company search (mock - returns mock results when text matches)
+  useEffect(() => {
+    if (businessType !== "ltd" || !companySearchText.trim()) {
+      setCompanySearchResults([]);
+      setShowCompanyDropdown(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setCompanySearchLoading(true);
+      // Mock: return PATH PAYMENTS LTD if search matches
+      const query = companySearchText.trim().toUpperCase();
+      const matches = MOCK_COMPANIES.filter((c) =>
+        c.name.toUpperCase().includes(query) || c.number.includes(query)
+      );
+      setCompanySearchResults(matches);
+      setCompanySearchLoading(false);
+      setShowCompanyDropdown(matches.length > 0);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [companySearchText, businessType]);
+
+  // Close company dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (companySearchRef.current && !companySearchRef.current.contains(e.target as Node)) {
+        setShowCompanyDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // MCC taxonomy for step5 – must run before any early returns (hooks rules)
+  const uxTaxonomy = mccTaxonomy?.ux_taxonomy ?? [];
+  useEffect(() => {
+    fetch("/mcc_taxonomy_uk_prototype.json")
+      .then((r) => r.json())
+      .then((data) => setMccTaxonomy(data as MccTaxonomy))
+      .catch(() => setMccTaxonomy({ ux_taxonomy: [] }));
+  }, []);
+  const selectedTier1 = useMemo(
+    () => uxTaxonomy.find((t) => t.id === customerIndustryTier1),
+    [uxTaxonomy, customerIndustryTier1]
+  );
+  const selectedTier2 = useMemo(
+    () => selectedTier1?.children.find((c) => c.id === customerIndustryTier2),
+    [selectedTier1, customerIndustryTier2]
+  );
+  useEffect(() => {
+    if (customerIndustry && !customerIndustryTier1 && uxTaxonomy.length > 0) {
+      for (const t1 of uxTaxonomy) {
+        for (const t2 of t1.children) {
+          if (t2.items.some((i) => i.mcc === customerIndustry)) {
+            setCustomerIndustryTier1(t1.id);
+            setCustomerIndustryTier2(t2.id);
+            return;
+          }
+        }
+      }
+    }
+  }, [customerIndustry, customerIndustryTier1, uxTaxonomy]);
 
   async function handleVerifyCode(e: React.FormEvent) {
     e.preventDefault();
@@ -1414,26 +1699,38 @@ export default function BoardingEntryPage() {
           </header>
           <div className="flex-1 max-w-md mx-auto w-full">
             <nav className="flex items-center flex-wrap gap-1 text-path-p2 text-path-grey-600 mb-6" aria-label="Breadcrumb">
-              <span className="flex items-center gap-1.5 text-path-grey-400">
+              <button
+                type="button"
+                onClick={() => setStep("form")}
+                className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer"
+              >
                 <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
                   <Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" />
                 </span>
                 Account
-              </span>
+              </button>
               <span className="mx-1 text-path-grey-400">/</span>
-              <span className="flex items-center gap-1.5 text-path-grey-400">
+              <button
+                type="button"
+                onClick={() => setStep("step2")}
+                className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer"
+              >
                 <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
                   <Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" />
                 </span>
                 Personal Details
-              </span>
+              </button>
               <span className="mx-1 text-path-grey-400">/</span>
-              <span className="flex items-center gap-1.5 text-path-grey-400">
+              <button
+                type="button"
+                onClick={() => setStep("step3")}
+                className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer"
+              >
                 <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
                   <Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" />
                 </span>
                 Verify
-              </span>
+              </button>
               <span className="mx-1 text-path-grey-400">/</span>
               <span className="flex items-center gap-1.5 font-medium text-path-primary">
                 <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
@@ -1442,11 +1739,782 @@ export default function BoardingEntryPage() {
                 Business
               </span>
             </nav>
-            <h1 className="text-path-h2 font-poppins text-path-primary mb-4">Business Information</h1>
-            <p className="text-path-p1 text-path-grey-700 mb-8">
-              This is a placeholder for the business information collection form. 
-              We'll build this section next.
-            </p>
+            <h1 className="text-path-h2 font-poppins text-path-primary mb-6">Business Information</h1>
+
+            {/* Business type */}
+            <div className="mb-8">
+              <h2 className="text-path-h3 font-poppins text-path-grey-900 mb-4">What type of business are you?</h2>
+              <div className="space-y-4">
+                <label className="flex items-center gap-3 cursor-pointer p-4 border border-path-grey-200 rounded-lg hover:border-path-primary hover:bg-path-grey-50 transition-colors has-[:checked]:border-path-primary has-[:checked]:bg-path-primary/5">
+                  <input
+                    type="radio"
+                    name="businessType"
+                    value="ltd"
+                    checked={businessType === "ltd"}
+                    onChange={() => setBusinessType("ltd")}
+                    className="w-5 h-5 text-path-primary border-path-grey-300 focus:ring-path-primary"
+                  />
+                  <span className="text-path-p1 text-path-grey-900 font-medium">Limited Company (Ltd)</span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer p-4 border border-path-grey-200 rounded-lg hover:border-path-primary hover:bg-path-grey-50 transition-colors has-[:checked]:border-path-primary has-[:checked]:bg-path-primary/5">
+                  <input
+                    type="radio"
+                    name="businessType"
+                    value="llp"
+                    checked={businessType === "llp"}
+                    onChange={() => setBusinessType("llp")}
+                    className="w-5 h-5 text-path-primary border-path-grey-300 focus:ring-path-primary"
+                  />
+                  <span className="text-path-p1 text-path-grey-900 font-medium">Limited Liability Partnership (LLP)</span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer p-4 border border-path-grey-200 rounded-lg hover:border-path-primary hover:bg-path-grey-50 transition-colors has-[:checked]:border-path-primary has-[:checked]:bg-path-primary/5">
+                  <input
+                    type="radio"
+                    name="businessType"
+                    value="sole_trader"
+                    checked={businessType === "sole_trader"}
+                    onChange={() => setBusinessType("sole_trader")}
+                    className="w-5 h-5 text-path-primary border-path-grey-300 focus:ring-path-primary"
+                  />
+                  <span className="text-path-p1 text-path-grey-900 font-medium">Sole Trader</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Company search - shown for Ltd and LLP */}
+            {(businessType === "ltd" || businessType === "llp") && !selectedCompany && (
+              <div className="mb-8" ref={companySearchRef}>
+                <h2 className="text-path-h3 font-poppins text-path-grey-900 mb-4">Find your registered company</h2>
+                <div className="relative">
+                  <label htmlFor="companyName" className="block text-path-p2 text-path-grey-600 mb-2">
+                    Company name
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="companyName"
+                      type="text"
+                      value={companySearchText}
+                      onChange={(e) => setCompanySearchText(e.target.value)}
+                      onFocus={() => companySearchResults.length > 0 && setShowCompanyDropdown(true)}
+                      placeholder="e.g. PATH PAYMENTS LTD"
+                      className="w-full px-4 py-3 pr-12 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 placeholder-path-grey-400 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-path-grey-600 pointer-events-none">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </span>
+                  </div>
+                  {companySearchLoading && (
+                    <p className="mt-2 text-path-p2 text-path-grey-500">Searching...</p>
+                  )}
+                  {showCompanyDropdown && companySearchResults.length > 0 && (
+                    <div className="mt-2 border border-path-grey-200 rounded-lg divide-y divide-path-grey-100 overflow-hidden bg-white shadow-lg">
+                      {companySearchResults.map((company) => (
+                        <button
+                          key={company.number}
+                          type="button"
+                          onClick={() => {
+                            const c = company as typeof company & { hasCorporateShareholders?: boolean };
+                            setSelectedCompany(c);
+                            setCompanySearchText(c.name);
+                            setShowCompanyDropdown(false);
+                            setCompanySearchResults([]);
+                            setPscConfirmed(null);
+                            setPscs([
+                              { id: "1", fullLegalName: "David Key", dateOfBirth: "", residentialPostcode: "", residentialLine1: "", residentialLine2: "", residentialTown: "", nationality: "", ownership: 50 },
+                              { id: "2", fullLegalName: "Louise Key", dateOfBirth: "", residentialPostcode: "", residentialLine1: "", residentialLine2: "", residentialTown: "", nationality: "", ownership: 50 },
+                            ]);
+                            setCorporateShareholders(
+                              c.hasCorporateShareholders
+                                ? [{ id: "corp-1", name: "HOLDCO LTD", companyNumber: "98765432", ownership: 25, beneficialOwners: [] }]
+                                : []
+                            );
+                          }}
+                          className={`w-full text-left p-4 hover:bg-path-grey-50 transition-colors ${company.status === "Dissolved" ? "opacity-60" : ""}`}
+                        >
+                          <div className="font-medium text-path-grey-900">{company.name}</div>
+                          <div className="text-path-p2 text-path-grey-600 mt-1">
+                            Company number: {company.number}
+                          </div>
+                          <div className="flex items-center gap-2 mt-2">
+                            <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
+                              company.status === "Active" ? "bg-green-100 text-green-800" : "bg-path-grey-200 text-path-grey-600"
+                            }`}>
+                              {company.status}
+                            </span>
+                            <span className="text-path-p2 text-path-grey-600">
+                              Registered office: {company.registeredOffice}
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Company confirmation - shown when company selected */}
+            {selectedCompany && (
+              <div className="mb-8">
+                <h2 className="text-path-h3 font-poppins text-path-grey-900 mb-4">Confirm your company details</h2>
+                <div className="p-6 border border-path-grey-200 rounded-lg space-y-4 bg-path-grey-50/50">
+                  <div>
+                    <div className="text-path-p2 text-path-grey-600 mt-1">Legal name</div>
+                    <div className="text-path-p1 font-medium text-path-grey-900">{selectedCompany.name}</div>
+                  </div>
+                  <div>
+                    <div className="text-path-p2 text-path-grey-600 mt-1">Company number</div>
+                    <div className="text-path-p1 font-medium text-path-grey-900">{selectedCompany.number}</div>
+                  </div>
+                  <div>
+                    <div className="text-path-p2 text-path-grey-600 mt-1">Registered address</div>
+                    <div className="text-path-p1 text-path-grey-900 whitespace-pre-line">{selectedCompany.fullAddress}</div>
+                  </div>
+                  <div>
+                    <div className="text-path-p2 text-path-grey-600 mt-1">Incorporated</div>
+                    <div className="text-path-p1 text-path-grey-900">{selectedCompany.incorporated}</div>
+                  </div>
+                  <div>
+                    <div className="text-path-p2 text-path-grey-600 mt-1">Industry (SIC)</div>
+                    <div className="text-path-p1 text-path-grey-900">{selectedCompany.industry}</div>
+                  </div>
+                </div>
+                <div className="mt-6 flex flex-col gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setCompanyDetailsConfirmed(true)}
+                    className="w-full py-3 px-4 bg-path-primary text-white rounded-lg font-medium hover:bg-path-primary-light-1 transition-colors"
+                  >
+                    These details are correct
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCompany(null);
+                      setCompanySearchText("");
+                      setCompanyDetailsConfirmed(false);
+                      setPscConfirmed(null);
+                      setPscs([
+                        { id: "1", fullLegalName: "David Key", dateOfBirth: "", residentialPostcode: "", residentialLine1: "", residentialLine2: "", residentialTown: "", nationality: "", ownership: 50 },
+                        { id: "2", fullLegalName: "Louise Key", dateOfBirth: "", residentialPostcode: "", residentialLine1: "", residentialLine2: "", residentialTown: "", nationality: "", ownership: 50 },
+                      ]);
+                      setCorporateShareholders([]);
+                    }}
+                    className="w-full py-3 px-4 border border-path-grey-300 text-path-grey-700 rounded-lg font-medium hover:bg-path-grey-100 transition-colors"
+                  >
+                    Something is incorrect
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Ownership & control (PSC) - shown only after company details confirmed */}
+            {selectedCompany && companyDetailsConfirmed && (() => {
+              const isBeneficialOwnerComplete = (ubo: { fullLegalName: string; dateOfBirth: string; residentialPostcode: string; residentialLine1: string; residentialTown: string; nationality: string; ownership: number }) =>
+                !!ubo.fullLegalName?.trim() && !!ubo.dateOfBirth?.trim() && !!ubo.residentialPostcode?.trim() &&
+                !!ubo.residentialLine1?.trim() && !!ubo.residentialTown?.trim() && !!ubo.nationality?.trim() && ubo.ownership > 0;
+              const allCorpsComplete = corporateShareholders.length === 0 || corporateShareholders.every(
+                (c) => c.beneficialOwners.length > 0 && c.beneficialOwners.some(isBeneficialOwnerComplete)
+              );
+              const showBeneficialOwnerForm = pscConfirmed === false || !allCorpsComplete;
+              return (
+              <div className="mb-8 pt-8 border-t border-path-grey-200">
+                <h2 className="text-path-h3 font-poppins text-path-grey-900 mb-4">Ownership & control</h2>
+                <p className="text-path-p1 text-path-grey-700 mb-6">
+                  We've identified the following individuals as persons with significant control:
+                </p>
+                <div className="space-y-6 mb-6">
+                  {pscs.map((psc) => (
+                    <div key={psc.id} className="p-4 border border-path-grey-200 rounded-lg bg-white">
+                      <div className="flex items-center justify-between mb-4">
+                        <span className="flex items-center gap-2 text-path-p1 font-medium text-path-grey-900">
+                          <span className="w-5 h-5 flex items-center justify-center bg-path-primary/10 rounded text-path-primary shrink-0">
+                            <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          </span>
+                          {pscConfirmed === false ? "Owner details" : (psc.fullLegalName || "Unnamed") + ` – ${psc.ownership}%`}
+                        </span>
+                        {pscConfirmed === false && (
+                          <button
+                            type="button"
+                            onClick={() => setPscs((prev) => prev.filter((p) => p.id !== psc.id))}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Remove director"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                      {pscConfirmed === false ? (
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-path-p2 text-path-grey-600 mb-1">Full legal name</label>
+                            <input
+                              type="text"
+                              value={psc.fullLegalName}
+                              onChange={(e) => setPscs((prev) => prev.map((p) => (p.id === psc.id ? { ...p, fullLegalName: e.target.value } : p)))}
+                              placeholder="Full legal name"
+                              className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-path-p2 text-path-grey-600 mb-1">Date of birth</label>
+                            <input
+                              type="text"
+                              value={psc.dateOfBirth}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const raw = val.replace(/\D/g, "").slice(0, 8);
+                                let formatted = "";
+                                if (raw.length > 0) formatted = raw.slice(0, 2);
+                                if (raw.length > 2) formatted += "/" + raw.slice(2, 4);
+                                if (raw.length > 4) formatted += "/" + raw.slice(4, 8);
+                                if (val.trim().endsWith("/") && (raw.length === 2 || raw.length === 4)) formatted += "/";
+                                setPscs((prev) => prev.map((p) => (p.id === psc.id ? { ...p, dateOfBirth: formatted } : p)));
+                              }}
+                              placeholder="DD / MM / YYYY"
+                              className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-path-p2 text-path-grey-600 mb-1">Residential address</label>
+                            <div className="space-y-3">
+                              <input
+                                type="text"
+                                value={psc.residentialPostcode}
+                                onChange={(e) => {
+                                  setPscs((prev) => prev.map((p) => (p.id === psc.id ? { ...p, residentialPostcode: e.target.value } : p)));
+                                  if (ownerAddressLookupTarget?.type === "psc" && ownerAddressLookupTarget.id === psc.id) {
+                                    setOwnerAddressLookupResults([]);
+                                    setOwnerAddressLookupError(null);
+                                  }
+                                }}
+                                onBlur={() => {
+                                  const pc = psc.residentialPostcode.trim();
+                                  if (pc && isValidUkPostcode(pc)) {
+                                    fetchAddressLookupForOwner(pc, { type: "psc", id: psc.id });
+                                  }
+                                }}
+                                placeholder="Postcode"
+                                className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                              />
+                              {ownerAddressLookupTarget?.type === "psc" && ownerAddressLookupTarget.id === psc.id && ownerAddressLookupLoading && (
+                                <p className="text-path-p2 text-path-grey-600">Loading addresses...</p>
+                              )}
+                              {ownerAddressLookupTarget?.type === "psc" && ownerAddressLookupTarget.id === psc.id && ownerAddressLookupError && !ownerAddressLookupLoading && (
+                                <p className="text-path-p2 text-path-secondary">{ownerAddressLookupError}</p>
+                              )}
+                              {ownerAddressLookupTarget?.type === "psc" && ownerAddressLookupTarget.id === psc.id && ownerAddressLookupResults.length > 0 && !ownerAddressLookupLoading && (
+                                <div>
+                                  <label className="block text-path-p2 text-path-grey-600 mb-1">Select address</label>
+                                  <select
+                                    className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary bg-white h-11"
+                                    style={{ minHeight: "2.75rem" }}
+                                    value=""
+                                    onChange={(e) => {
+                                      const idx = e.target.value ? parseInt(e.target.value, 10) : -1;
+                                      if (idx >= 0 && ownerAddressLookupResults[idx]) {
+                                        const a = ownerAddressLookupResults[idx];
+                                        setPscs((prev) => prev.map((p) => (p.id === psc.id ? { ...p, residentialLine1: a.addressLine1, residentialLine2: a.addressLine2 || "", residentialTown: a.town } : p)));
+                                        setOwnerAddressLookupResults([]);
+                                        setOwnerAddressLookupError(null);
+                                        setOwnerAddressLookupTarget(null);
+                                      }
+                                    }}
+                                  >
+                                    <option value="">Select your address</option>
+                                    {ownerAddressLookupResults.map((a, i) => (
+                                      <option key={i} value={i}>
+                                        {[a.addressLine1, a.town, a.postcode].filter(Boolean).join(", ")}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+                              <input
+                                type="text"
+                                value={psc.residentialLine1}
+                                onChange={(e) => setPscs((prev) => prev.map((p) => (p.id === psc.id ? { ...p, residentialLine1: e.target.value } : p)))}
+                                placeholder="Address Line 1"
+                                className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                              />
+                              <input
+                                type="text"
+                                value={psc.residentialLine2}
+                                onChange={(e) => setPscs((prev) => prev.map((p) => (p.id === psc.id ? { ...p, residentialLine2: e.target.value } : p)))}
+                                placeholder="Address Line 2"
+                                className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                              />
+                              <input
+                                type="text"
+                                value={psc.residentialTown}
+                                onChange={(e) => setPscs((prev) => prev.map((p) => (p.id === psc.id ? { ...p, residentialTown: e.target.value } : p)))}
+                                placeholder="Town"
+                                className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-path-p2 text-path-grey-600 mb-1">Nationality</label>
+                            <select
+                              value={psc.nationality}
+                              onChange={(e) => setPscs((prev) => prev.map((p) => (p.id === psc.id ? { ...p, nationality: e.target.value } : p)))}
+                              className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary bg-white h-11"
+                              style={{ minHeight: "2.75rem" }}
+                            >
+                              <option value="">Select nationality</option>
+                              {EUROPEAN_COUNTRIES.map((c) => (
+                                <option key={c} value={c}>{c}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-path-p2 text-path-grey-600 mb-1">Ownership percentage</label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={psc.ownership}
+                                onChange={(e) => {
+                                  const v = parseInt(e.target.value, 10);
+                                  if (!isNaN(v) && v >= 0 && v <= 100) {
+                                    setPscs((prev) => prev.map((p) => (p.id === psc.id ? { ...p, ownership: v } : p)));
+                                  }
+                                }}
+                                className="w-20 px-2 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 text-right focus:ring-2 focus:ring-path-primary focus:border-path-primary h-11"
+                                style={{ minHeight: "2.75rem" }}
+                              />
+                              <span className="text-path-p2 text-path-grey-600">%</span>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+                {pscConfirmed === false && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPscs((prev) => [
+                        ...prev,
+                        { id: crypto.randomUUID(), fullLegalName: "", dateOfBirth: "", residentialPostcode: "", residentialLine1: "", residentialLine2: "", residentialTown: "", nationality: "", ownership: 0 },
+                      ])
+                    }
+                    className="mb-6 flex items-center gap-2 px-4 py-2 border border-dashed border-path-grey-300 text-path-grey-600 rounded-lg hover:border-path-primary hover:text-path-primary transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Add director
+                  </button>
+                )}
+
+                {/* Corporate shareholders – beneficial ownership (only for complex flow) */}
+                {corporateShareholders.length > 0 && (
+                  <div className="mb-6 pt-6 border-t border-path-grey-200">
+                    <h3 className="text-path-p1 font-semibold text-path-grey-900 mb-2">Additional ownership details required</h3>
+                    <p className="text-path-p2 text-path-grey-600 mb-6">
+                      We detected corporate shareholder(s) with 25% or more. To support your application we need to understand the ownership structure.
+                    </p>
+                    {corporateShareholders.map((corp) => (
+                      <div key={corp.id} className="mb-6 p-4 border border-path-grey-200 rounded-lg bg-path-grey-50/50">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-path-p1 font-medium text-path-grey-900">{corp.name}</span>
+                          <span className="text-path-p2 text-path-grey-600">(Company {corp.companyNumber})</span>
+                          <span className="text-path-p2 text-path-grey-600">– {corp.ownership}%</span>
+                        </div>
+                        <p className="text-path-p2 text-path-grey-600 mb-4">
+                          Please confirm who ultimately owns 25% or more of this company.
+                        </p>
+                        <div className="space-y-6 mb-4">
+                          {corp.beneficialOwners.map((ubo) => (
+                            <div key={ubo.id} className="p-4 border border-path-grey-200 rounded-lg bg-white">
+                              <div className="flex items-center justify-between mb-4">
+                                <span className="text-path-p1 font-medium text-path-grey-900">
+                                  {showBeneficialOwnerForm ? "Owner details" : (ubo.fullLegalName || "Unnamed") + ` – ${ubo.ownership}%`}
+                                </span>
+                                {showBeneficialOwnerForm && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setCorporateShareholders((prev) =>
+                                        prev.map((c) =>
+                                          c.id === corp.id
+                                            ? { ...c, beneficialOwners: c.beneficialOwners.filter((b) => b.id !== ubo.id) }
+                                            : c
+                                        )
+                                      )
+                                    }
+                                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                    title="Remove owner"
+                                  >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                  </button>
+                                )}
+                              </div>
+                              {showBeneficialOwnerForm && (
+                                <div className="space-y-4">
+                                  <div>
+                                    <label className="block text-path-p2 text-path-grey-600 mb-1">Full legal name</label>
+                                    <input
+                                      type="text"
+                                      value={ubo.fullLegalName}
+                                      onChange={(e) =>
+                                        setCorporateShareholders((prev) =>
+                                          prev.map((c) =>
+                                            c.id === corp.id
+                                              ? { ...c, beneficialOwners: c.beneficialOwners.map((b) => (b.id === ubo.id ? { ...b, fullLegalName: e.target.value } : b)) }
+                                              : c
+                                          )
+                                        )
+                                      }
+                                      placeholder="Full legal name"
+                                      className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-path-p2 text-path-grey-600 mb-1">Date of birth</label>
+                                    <input
+                                      type="text"
+                                      value={ubo.dateOfBirth}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        const raw = val.replace(/\D/g, "").slice(0, 8);
+                                        let formatted = "";
+                                        if (raw.length > 0) formatted = raw.slice(0, 2);
+                                        if (raw.length > 2) formatted += "/" + raw.slice(2, 4);
+                                        if (raw.length > 4) formatted += "/" + raw.slice(4, 8);
+                                        if (val.trim().endsWith("/") && (raw.length === 2 || raw.length === 4)) formatted += "/";
+                                        setCorporateShareholders((prev) =>
+                                          prev.map((c) =>
+                                            c.id === corp.id
+                                              ? { ...c, beneficialOwners: c.beneficialOwners.map((b) => (b.id === ubo.id ? { ...b, dateOfBirth: formatted } : b)) }
+                                              : c
+                                          )
+                                        );
+                                      }}
+                                      placeholder="DD / MM / YYYY"
+                                      className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-path-p2 text-path-grey-600 mb-1">Residential address</label>
+                                    <div className="space-y-3">
+                                      <input
+                                        type="text"
+                                        value={ubo.residentialPostcode}
+                                        onChange={(e) => {
+                                          setCorporateShareholders((prev) =>
+                                            prev.map((c) =>
+                                              c.id === corp.id
+                                                ? { ...c, beneficialOwners: c.beneficialOwners.map((b) => (b.id === ubo.id ? { ...b, residentialPostcode: e.target.value } : b)) }
+                                                : c
+                                            )
+                                          );
+                                          if (ownerAddressLookupTarget?.type === "ubo" && ownerAddressLookupTarget.corpId === corp.id && ownerAddressLookupTarget.uboId === ubo.id) {
+                                            setOwnerAddressLookupResults([]);
+                                            setOwnerAddressLookupError(null);
+                                          }
+                                        }}
+                                        onBlur={() => {
+                                          const pc = ubo.residentialPostcode.trim();
+                                          if (pc && isValidUkPostcode(pc)) {
+                                            fetchAddressLookupForOwner(pc, { type: "ubo", corpId: corp.id, uboId: ubo.id });
+                                          }
+                                        }}
+                                        placeholder="Postcode"
+                                        className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                                      />
+                                      {ownerAddressLookupTarget?.type === "ubo" && ownerAddressLookupTarget.corpId === corp.id && ownerAddressLookupTarget.uboId === ubo.id && ownerAddressLookupLoading && (
+                                        <p className="text-path-p2 text-path-grey-600">Loading addresses...</p>
+                                      )}
+                                      {ownerAddressLookupTarget?.type === "ubo" && ownerAddressLookupTarget.corpId === corp.id && ownerAddressLookupTarget.uboId === ubo.id && ownerAddressLookupError && !ownerAddressLookupLoading && (
+                                        <p className="text-path-p2 text-path-secondary">{ownerAddressLookupError}</p>
+                                      )}
+                                      {ownerAddressLookupTarget?.type === "ubo" && ownerAddressLookupTarget.corpId === corp.id && ownerAddressLookupTarget.uboId === ubo.id && ownerAddressLookupResults.length > 0 && !ownerAddressLookupLoading && (
+                                        <div>
+                                          <label className="block text-path-p2 text-path-grey-600 mb-1">Select address</label>
+                                          <select
+                                            className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary bg-white h-11"
+                                            style={{ minHeight: "2.75rem" }}
+                                            value=""
+                                            onChange={(e) => {
+                                              const idx = e.target.value ? parseInt(e.target.value, 10) : -1;
+                                              if (idx >= 0 && ownerAddressLookupResults[idx]) {
+                                                const a = ownerAddressLookupResults[idx];
+                                                setCorporateShareholders((prev) =>
+                                                  prev.map((c) =>
+                                                    c.id === corp.id
+                                                      ? { ...c, beneficialOwners: c.beneficialOwners.map((b) => (b.id === ubo.id ? { ...b, residentialLine1: a.addressLine1, residentialLine2: a.addressLine2 || "", residentialTown: a.town } : b)) }
+                                                      : c
+                                                  )
+                                                );
+                                                setOwnerAddressLookupResults([]);
+                                                setOwnerAddressLookupError(null);
+                                                setOwnerAddressLookupTarget(null);
+                                              }
+                                            }}
+                                          >
+                                            <option value="">Select your address</option>
+                                            {ownerAddressLookupResults.map((a, i) => (
+                                              <option key={i} value={i}>
+                                                {[a.addressLine1, a.town, a.postcode].filter(Boolean).join(", ")}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                      )}
+                                      <input
+                                        type="text"
+                                        value={ubo.residentialLine1}
+                                        onChange={(e) =>
+                                          setCorporateShareholders((prev) =>
+                                            prev.map((c) =>
+                                              c.id === corp.id
+                                                ? { ...c, beneficialOwners: c.beneficialOwners.map((b) => (b.id === ubo.id ? { ...b, residentialLine1: e.target.value } : b)) }
+                                                : c
+                                            )
+                                          )
+                                        }
+                                        placeholder="Address Line 1"
+                                        className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={ubo.residentialLine2}
+                                        onChange={(e) =>
+                                          setCorporateShareholders((prev) =>
+                                            prev.map((c) =>
+                                              c.id === corp.id
+                                                ? { ...c, beneficialOwners: c.beneficialOwners.map((b) => (b.id === ubo.id ? { ...b, residentialLine2: e.target.value } : b)) }
+                                                : c
+                                            )
+                                          )
+                                        }
+                                        placeholder="Address Line 2"
+                                        className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={ubo.residentialTown}
+                                        onChange={(e) =>
+                                          setCorporateShareholders((prev) =>
+                                            prev.map((c) =>
+                                              c.id === corp.id
+                                                ? { ...c, beneficialOwners: c.beneficialOwners.map((b) => (b.id === ubo.id ? { ...b, residentialTown: e.target.value } : b)) }
+                                                : c
+                                            )
+                                          )
+                                        }
+                                        placeholder="Town"
+                                        className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="block text-path-p2 text-path-grey-600 mb-1">Nationality</label>
+                                    <select
+                                      value={ubo.nationality}
+                                      onChange={(e) =>
+                                        setCorporateShareholders((prev) =>
+                                          prev.map((c) =>
+                                            c.id === corp.id
+                                              ? { ...c, beneficialOwners: c.beneficialOwners.map((b) => (b.id === ubo.id ? { ...b, nationality: e.target.value } : b)) }
+                                              : c
+                                          )
+                                        )
+                                      }
+                                      className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary bg-white h-11"
+                                      style={{ minHeight: "2.75rem" }}
+                                    >
+                                      <option value="">Select nationality</option>
+                                      {EUROPEAN_COUNTRIES.map((c) => (
+                                        <option key={c} value={c}>{c}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-path-p2 text-path-grey-600 mb-1">Ownership percentage</label>
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        max={100}
+                                        value={ubo.ownership}
+                                        onChange={(e) => {
+                                          const v = parseInt(e.target.value, 10);
+                                          if (!isNaN(v) && v >= 0 && v <= 100) {
+                                            setCorporateShareholders((prev) =>
+                                              prev.map((c) =>
+                                                c.id === corp.id
+                                                  ? { ...c, beneficialOwners: c.beneficialOwners.map((b) => (b.id === ubo.id ? { ...b, ownership: v } : b)) }
+                                                  : c
+                                              )
+                                            );
+                                          }
+                                        }}
+                                        className="w-20 px-2 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 text-right focus:ring-2 focus:ring-path-primary focus:border-path-primary h-11"
+                                        style={{ minHeight: "2.75rem" }}
+                                      />
+                                      <span className="text-path-p2 text-path-grey-600">%</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {showBeneficialOwnerForm && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCorporateShareholders((prev) =>
+                                prev.map((c) =>
+                                  c.id === corp.id
+                                    ? { ...c, beneficialOwners: [...c.beneficialOwners, { id: crypto.randomUUID(), fullLegalName: "", dateOfBirth: "", residentialPostcode: "", residentialLine1: "", residentialLine2: "", residentialTown: "", nationality: "", ownership: 0 }] }
+                                    : c
+                                )
+                              )
+                            }
+                            className="flex items-center gap-2 px-4 py-2 border border-dashed border-path-grey-300 text-path-grey-600 rounded-lg hover:border-path-primary hover:text-path-primary transition-colors"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                            Add individual owner
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Simple flow: no corporate shareholders – show Yes/No directly */}
+                {/* Complex flow: require beneficial owner info first, then show Yes/No */}
+                {corporateShareholders.length === 0 ? (
+                  <>
+                    <p className="text-path-p1 text-path-grey-700 mb-4">Are these details correct?</p>
+                    <div className="space-y-4">
+                      <label className="flex items-center gap-3 cursor-pointer p-4 border border-path-grey-200 rounded-lg hover:border-path-primary hover:bg-path-grey-50 transition-colors has-[:checked]:border-path-primary has-[:checked]:bg-path-primary/5">
+                        <input
+                          type="radio"
+                          name="pscConfirmed"
+                          checked={pscConfirmed === true}
+                          onChange={() => setPscConfirmed(true)}
+                          className="w-5 h-5 text-path-primary border-path-grey-300 focus:ring-path-primary"
+                        />
+                        <span className="text-path-p1 text-path-grey-900 font-medium">Yes, this is correct</span>
+                      </label>
+                      <label className="flex items-center gap-3 cursor-pointer p-4 border border-path-grey-200 rounded-lg hover:border-path-primary hover:bg-path-grey-50 transition-colors has-[:checked]:border-path-primary has-[:checked]:bg-path-primary/5">
+                        <input
+                          type="radio"
+                          name="pscConfirmed"
+                          checked={pscConfirmed === false}
+                          onChange={() => setPscConfirmed(false)}
+                          className="w-5 h-5 text-path-primary border-path-grey-300 focus:ring-path-primary"
+                        />
+                        <span className="text-path-p1 text-path-grey-900 font-medium">No, I need to update</span>
+                      </label>
+                    </div>
+                  </>
+                ) : (() => {
+                  const isBeneficialOwnerComplete = (ubo: { fullLegalName: string; dateOfBirth: string; residentialPostcode: string; residentialLine1: string; residentialTown: string; nationality: string; ownership: number }) =>
+                    !!ubo.fullLegalName?.trim() && !!ubo.dateOfBirth?.trim() && !!ubo.residentialPostcode?.trim() &&
+                    !!ubo.residentialLine1?.trim() && !!ubo.residentialTown?.trim() && !!ubo.nationality?.trim() && ubo.ownership > 0;
+                  const allCorpsComplete = corporateShareholders.every(
+                    (c) => c.beneficialOwners.length > 0 && c.beneficialOwners.some(isBeneficialOwnerComplete)
+                  );
+                  if (!allCorpsComplete) {
+                    return (
+                      <div className="space-y-4">
+                        {corporateShareholders.map((corp) => {
+                          const corpComplete = corp.beneficialOwners.length > 0 && corp.beneficialOwners.some(isBeneficialOwnerComplete);
+                          if (corpComplete) return null;
+                          if (corp.beneficialOwners.length > 0) return null; // Has owners but incomplete – form is shown in corporate section
+                          return (
+                            <button
+                              key={corp.id}
+                              type="button"
+                              onClick={() => {
+                                if (corp.beneficialOwners.length === 0) {
+                                  setCorporateShareholders((prev) =>
+                                    prev.map((c) =>
+                                      c.id === corp.id
+                                        ? { ...c, beneficialOwners: [{ id: crypto.randomUUID(), fullLegalName: "", dateOfBirth: "", residentialPostcode: "", residentialLine1: "", residentialLine2: "", residentialTown: "", nationality: "", ownership: 0 }] }
+                                        : c
+                                    )
+                                  );
+                                }
+                              }}
+                              className="w-full py-3 px-4 bg-path-primary text-white rounded-lg font-medium hover:bg-path-primary-light-1 transition-colors"
+                            >
+                              Add beneficial owner info for {corp.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  }
+                  return (
+                    <>
+                      <p className="text-path-p1 text-path-grey-700 mb-4">Are these details correct?</p>
+                      <div className="space-y-4">
+                        <label className="flex items-center gap-3 cursor-pointer p-4 border border-path-grey-200 rounded-lg hover:border-path-primary hover:bg-path-grey-50 transition-colors has-[:checked]:border-path-primary has-[:checked]:bg-path-primary/5">
+                          <input
+                            type="radio"
+                            name="pscConfirmed"
+                            checked={pscConfirmed === true}
+                            onChange={() => setPscConfirmed(true)}
+                            className="w-5 h-5 text-path-primary border-path-grey-300 focus:ring-path-primary"
+                          />
+                          <span className="text-path-p1 text-path-grey-900 font-medium">Yes, this is correct</span>
+                        </label>
+                        <label className="flex items-center gap-3 cursor-pointer p-4 border border-path-grey-200 rounded-lg hover:border-path-primary hover:bg-path-grey-50 transition-colors has-[:checked]:border-path-primary has-[:checked]:bg-path-primary/5">
+                          <input
+                            type="radio"
+                            name="pscConfirmed"
+                            checked={pscConfirmed === false}
+                            onChange={() => setPscConfirmed(false)}
+                            className="w-5 h-5 text-path-primary border-path-grey-300 focus:ring-path-primary"
+                          />
+                          <span className="text-path-p1 text-path-grey-900 font-medium">No, I need to update</span>
+                        </label>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            );
+            })()}
+
+            {/* Continue – shown when ownership details confirmed */}
+            {pscConfirmed === true && (
+              <div className="mt-8 pt-8 border-t border-path-grey-200">
+                <button
+                  type="button"
+                  onClick={() => setStep("step5")}
+                  className="w-full py-3 px-4 bg-path-primary text-white rounded-lg font-medium hover:bg-path-primary-light-1 transition-colors"
+                >
+                  Continue
+                </button>
+              </div>
+            )}
+
+            {/* Sole Trader placeholder */}
+            {businessType === "sole_trader" && (
+              <p className="text-path-p1 text-path-grey-600 mb-8">
+                Sole trader registration will be available in a future update.
+              </p>
+            )}
           </div>
           <footer className="mt-12 pt-6 border-t border-path-grey-200 text-path-p2 text-path-grey-500 text-center">
             © 2026 Path2ai.tech
@@ -1461,6 +2529,364 @@ export default function BoardingEntryPage() {
             }}
             onSaveForLater={() => setShowSaveForLaterModal(true)}
           />
+        )}
+
+        {/* Save for Later Modal */}
+        {showSaveForLaterModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full">
+              {!saveForLaterSuccess ? (
+                <>
+                  <h2 className="text-path-h3 font-poppins text-path-primary mb-4">Save for later</h2>
+                  <p className="text-path-p1 text-path-grey-700 mb-4">
+                    Your progress has been saved and is available for the next 14 days for you to return and complete.
+                  </p>
+                  <p className="text-path-p1 text-path-grey-700 mb-6">
+                    We&apos;ll send an email to your email address with a link that will take you to the merchant boarding login screen.
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setShowSaveForLaterModal(false)}
+                      className="flex-1 px-4 py-2 border border-path-grey-300 rounded-lg text-path-grey-700 hover:bg-path-grey-100 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveForLater}
+                      disabled={saveForLaterLoading}
+                      className="flex-1 px-4 py-2 bg-path-primary text-white rounded-lg hover:bg-path-primary-light-1 transition-colors disabled:opacity-50"
+                    >
+                      {saveForLaterLoading ? "Sending..." : "Continue"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-path-h3 font-poppins text-path-primary mb-4">Email sent!</h2>
+                  <p className="text-path-p1 text-path-grey-700 mb-6">
+                    We&apos;ve sent a link to your email address. You can use it to return and complete your boarding anytime within the next 14 days.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setShowSaveForLaterModal(false);
+                      setSaveForLaterSuccess(false);
+                      window.location.href = "/";
+                    }}
+                    className="w-full px-4 py-2 bg-path-primary text-white rounded-lg hover:bg-path-primary-light-1 transition-colors"
+                  >
+                    Close
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (step === "step5") {
+    return (
+      <div className="flex min-h-screen">
+        <main className="flex-1 flex flex-col p-6 md:p-8 font-roboto bg-white text-path-grey-900">
+          <header className="flex items-center gap-4 mb-8">
+            <Image src="/logo-path.png" alt="Path" width={140} height={40} />
+          </header>
+          <div className="flex-1 max-w-md mx-auto w-full">
+            <nav className="flex items-center flex-wrap gap-1 text-path-p2 text-path-grey-600 mb-6" aria-label="Breadcrumb">
+              <button
+                type="button"
+                onClick={() => setStep("form")}
+                className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer"
+              >
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
+                  <Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" />
+                </span>
+                Account
+              </button>
+              <span className="mx-1 text-path-grey-400">/</span>
+              <button
+                type="button"
+                onClick={() => setStep("step2")}
+                className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer"
+              >
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
+                  <Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" />
+                </span>
+                Personal Details
+              </button>
+              <span className="mx-1 text-path-grey-400">/</span>
+              <button
+                type="button"
+                onClick={() => setStep("step3")}
+                className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer"
+              >
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
+                  <Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" />
+                </span>
+                Verify
+              </button>
+              <span className="mx-1 text-path-grey-400">/</span>
+              <button
+                type="button"
+                onClick={() => setStep("step4")}
+                className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer"
+              >
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
+                  <Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" />
+                </span>
+                Business
+              </button>
+              <span className="mx-1 text-path-grey-400">/</span>
+              <span className="flex items-center gap-1.5 font-medium text-path-primary">
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0">
+                  <Image src="/icons/form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain" />
+                </span>
+                Business Details
+              </span>
+            </nav>
+            <h1 className="text-path-h2 font-poppins text-path-primary mb-2">Business Details</h1>
+            {inviteInfo && (
+              <p className="text-path-p1 text-path-grey-700 mb-6">
+                Please provide some additional details about how your business will trade with {inviteInfo.partner.name}&apos;s platform.
+              </p>
+            )}
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                // TODO: save and proceed to next step
+              }}
+              className="space-y-6 mb-8"
+            >
+              <div>
+                <label htmlFor="vatNumber" className="block text-path-p2 font-medium text-path-grey-700 mb-1">
+                  VAT Number (if registered)
+                </label>
+                <input
+                  id="vatNumber"
+                  type="text"
+                  value={vatNumber}
+                  onChange={(e) => {
+                    setVatNumber(e.target.value);
+                    setVatNumberError(null);
+                  }}
+                  onBlur={() => setVatNumberError(validateVatNumber(vatNumber))}
+                  placeholder="e.g. GB123456789"
+                  className={`w-full px-3 py-2 border rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary ${vatNumberError ? "border-path-secondary" : "border-path-grey-300"}`}
+                />
+                {vatNumberError && (
+                  <p className="mt-1 text-path-p2 text-path-secondary">{vatNumberError}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">
+                  Your Business Industry
+                </label>
+                <div className="space-y-3">
+                  {!mccTaxonomy ? (
+                    <p className="text-path-p2 text-path-grey-600 py-2">Loading industry options...</p>
+                  ) : (
+                    <>
+                  <div>
+                    <label htmlFor="tier1" className="sr-only">Category</label>
+                    <select
+                      id="tier1"
+                      value={customerIndustryTier1}
+                      onChange={(e) => {
+                        setCustomerIndustryTier1(e.target.value);
+                        setCustomerIndustryTier2("");
+                        setCustomerIndustry("");
+                      }}
+                      className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary bg-white h-11"
+                      style={{ minHeight: "2.75rem" }}
+                    >
+                      <option value="">Select Category</option>
+                      {uxTaxonomy.map((tier) => (
+                        <option key={tier.id} value={tier.id}>
+                          {tier.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {selectedTier1 && (
+                    <div>
+                      <label htmlFor="tier2" className="sr-only">Sub category</label>
+                      <select
+                        id="tier2"
+                        value={customerIndustryTier2}
+                        onChange={(e) => {
+                          setCustomerIndustryTier2(e.target.value);
+                          setCustomerIndustry("");
+                        }}
+                        className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary bg-white h-11"
+                        style={{ minHeight: "2.75rem" }}
+                      >
+                        <option value="">Select sub category</option>
+                        {selectedTier1.children.map((child) => (
+                          <option key={child.id} value={child.id}>
+                            {child.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {selectedTier2 && (
+                    <div>
+                      <label htmlFor="customerIndustry" className="sr-only">Business</label>
+                      <select
+                        id="customerIndustry"
+                        value={customerIndustry}
+                        onChange={(e) => setCustomerIndustry(e.target.value)}
+                        className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary bg-white h-11"
+                        style={{ minHeight: "2.75rem" }}
+                      >
+                        <option value="">Select business</option>
+                        {selectedTier2.items.map((item) => (
+                          <option key={item.mcc} value={item.mcc}>
+                            {item.mcc} – {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="customerSupportEmail" className="block text-path-p2 font-medium text-path-grey-700 mb-1">
+                  Customer support email
+                </label>
+                <input
+                  id="customerSupportEmail"
+                  type="email"
+                  value={customerSupportEmail}
+                  onChange={(e) => {
+                    setCustomerSupportEmail(e.target.value);
+                    setCustomerSupportEmailError(null);
+                  }}
+                  onBlur={() => {
+                    const t = customerSupportEmail.trim();
+                    setCustomerSupportEmailError(t && !isValidEmail(t) ? "Enter a valid email (e.g. support@company.com)" : null);
+                  }}
+                  placeholder="support@yourcompany.com"
+                  className={`w-full px-3 py-2 border rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary ${customerSupportEmailError ? "border-path-secondary" : "border-path-grey-300"}`}
+                />
+                {customerSupportEmailError && (
+                  <p className="mt-1 text-path-p2 text-path-secondary">{customerSupportEmailError}</p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="customerWebsites" className="block text-path-p2 font-medium text-path-grey-700 mb-1">
+                  Customer websites
+                </label>
+                <input
+                  id="customerWebsites"
+                  type="text"
+                  value={customerWebsites}
+                  onChange={(e) => {
+                    setCustomerWebsites(e.target.value);
+                    setCustomerWebsitesError(null);
+                  }}
+                  onBlur={() => setCustomerWebsitesError(validateWebsite(customerWebsites))}
+                  placeholder="e.g. https://www.example.com (comma-separated for multiple)"
+                  className={`w-full px-3 py-2 border rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary ${customerWebsitesError ? "border-path-secondary" : "border-path-grey-300"}`}
+                />
+                {customerWebsitesError && (
+                  <p className="mt-1 text-path-p2 text-path-secondary">{customerWebsitesError}</p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="productDescription" className="block text-path-p2 font-medium text-path-grey-700 mb-1">
+                  Product description
+                </label>
+                <textarea
+                  id="productDescription"
+                  value={productDescription}
+                  onChange={(e) => setProductDescription(e.target.value)}
+                  placeholder="Describe your products or services..."
+                  rows={5}
+                  className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 px-4 bg-path-primary text-white rounded-lg font-medium hover:bg-path-primary-light-1 transition-colors"
+              >
+                Continue
+              </button>
+            </form>
+          </div>
+          <footer className="mt-12 pt-6 border-t border-path-grey-200 text-path-p2 text-path-grey-500 text-center">
+            © 2026 Path2ai.tech
+          </footer>
+        </main>
+        {inviteInfo && (
+          <BoardingRightPanel
+            partner={inviteInfo.partner}
+            onBack={{
+              label: "Business",
+              onClick: () => setStep("step4")
+            }}
+            onSaveForLater={() => setShowSaveForLaterModal(true)}
+          />
+        )}
+
+        {/* Save for Later Modal */}
+        {showSaveForLaterModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full">
+              {!saveForLaterSuccess ? (
+                <>
+                  <h2 className="text-path-h3 font-poppins text-path-primary mb-4">Save for later</h2>
+                  <p className="text-path-p1 text-path-grey-700 mb-4">
+                    Your progress has been saved and is available for the next 14 days for you to return and complete.
+                  </p>
+                  <p className="text-path-p1 text-path-grey-700 mb-6">
+                    We&apos;ll send an email to your email address with a link that will take you to the merchant boarding login screen.
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setShowSaveForLaterModal(false)}
+                      className="flex-1 px-4 py-2 border border-path-grey-300 rounded-lg text-path-grey-700 hover:bg-path-grey-100 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveForLater}
+                      disabled={saveForLaterLoading}
+                      className="flex-1 px-4 py-2 bg-path-primary text-white rounded-lg hover:bg-path-primary-light-1 transition-colors disabled:opacity-50"
+                    >
+                      {saveForLaterLoading ? "Sending..." : "Continue"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-path-h3 font-poppins text-path-primary mb-4">Email sent!</h2>
+                  <p className="text-path-p1 text-path-grey-700 mb-6">
+                    We&apos;ve sent a link to your email address. You can use it to return and complete your boarding anytime within the next 14 days.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setShowSaveForLaterModal(false);
+                      setSaveForLaterSuccess(false);
+                      window.location.href = "/";
+                    }}
+                    className="w-full px-4 py-2 bg-path-primary text-white rounded-lg hover:bg-path-primary-light-1 transition-colors"
+                  >
+                    Close
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
         )}
       </div>
     );
