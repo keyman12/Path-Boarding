@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiGet } from "@/lib/api";
 
 const UK_POSTCODE_REGEX = /^[A-Z]{1,2}[0-9][0-9A-Z]?\s?[0-9][A-Z]{2}$/i;
@@ -21,6 +21,8 @@ type StoreAddressInputProps = {
   label?: string;
 };
 
+const inputClassName = "w-full border border-path-grey-300 rounded-lg px-3 py-2 text-path-p1 h-11";
+
 export function StoreAddressInput({
   postcode,
   addressLine1,
@@ -34,6 +36,7 @@ export function StoreAddressInput({
   const [lookupResults, setLookupResults] = useState<AddressLookupResult[]>([]);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchLookup = useCallback(async (pc: string) => {
     if (!pc || !isValidUkPostcode(pc)) return;
@@ -58,6 +61,23 @@ export function StoreAddressInput({
     }
   }, []);
 
+  useEffect(() => {
+    const pc = postcode.trim();
+    if (!pc || !isValidUkPostcode(pc)) {
+      setLookupResults([]);
+      setLookupError(null);
+      return;
+    }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => fetchLookup(pc), 400);
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+    };
+  }, [postcode, fetchLookup]);
+
   return (
     <div className="space-y-2">
       {label && <p className="text-path-p2 font-medium text-path-grey-700">{label}</p>}
@@ -70,13 +90,9 @@ export function StoreAddressInput({
             setLookupError(null);
             setLookupResults([]);
           }}
-          onBlur={() => {
-            const pc = postcode.trim();
-            if (pc && isValidUkPostcode(pc)) fetchLookup(pc);
-          }}
           placeholder="Postcode (enter first)"
           disabled={disabled}
-          className="w-full border border-path-grey-300 rounded px-2 py-1 text-path-p2"
+          className={inputClassName}
           autoComplete="postal-code"
         />
       </div>
@@ -84,9 +100,9 @@ export function StoreAddressInput({
       {lookupError && !lookupLoading && <p className="text-path-p2 text-path-secondary text-sm">{lookupError}</p>}
       {lookupResults.length > 0 && !lookupLoading && (
         <div>
-          <label className="block text-path-p2 font-medium text-path-grey-700 mb-1 text-sm">Select address</label>
+          <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Select address</label>
           <select
-            className="w-full border border-path-grey-300 rounded px-2 py-1 text-path-p2"
+            className={inputClassName}
             value=""
             onChange={(e) => {
               const idx = e.target.value ? parseInt(e.target.value, 10) : -1;
@@ -117,7 +133,7 @@ export function StoreAddressInput({
         onChange={(e) => onAddressChange({ addressLine1: e.target.value, addressLine2, town })}
         placeholder="Address Line 1"
         disabled={disabled}
-        className="w-full border border-path-grey-300 rounded px-2 py-1 text-path-p2"
+        className={inputClassName}
       />
       <input
         type="text"
@@ -125,7 +141,7 @@ export function StoreAddressInput({
         onChange={(e) => onAddressChange({ addressLine1, addressLine2: e.target.value, town })}
         placeholder="Address Line 2"
         disabled={disabled}
-        className="w-full border border-path-grey-300 rounded px-2 py-1 text-path-p2"
+        className={inputClassName}
       />
       <input
         type="text"
@@ -133,7 +149,7 @@ export function StoreAddressInput({
         onChange={(e) => onAddressChange({ addressLine1, addressLine2, town: e.target.value })}
         placeholder="Town"
         disabled={disabled}
-        className="w-full border border-path-grey-300 rounded px-2 py-1 text-path-p2"
+        className={inputClassName}
       />
     </div>
   );

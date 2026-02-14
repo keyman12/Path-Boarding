@@ -37,7 +37,7 @@ def send_verification_code_email(to_email: str, code: str, expire_minutes: int =
 <head><meta charset="utf-8"></head>
 <body style="font-family: sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
   <p style="margin-bottom: 24px;">
-    <img src="{logo_url}" alt="Path" width="140" height="40" style="display: block;" />
+    <img src="{logo_url}" alt="Path" width="140" height="48" style="display: block;" />
   </p>
   <p style="font-size: 16px; color: #1a1a1a; line-height: 1.5;">
     You started signing up for Path Boarding. Use the code below to verify your email address.
@@ -111,7 +111,7 @@ def send_save_for_later_email(to_email: str, user_name: str) -> bool:
 <head><meta charset="utf-8"></head>
 <body style="font-family: sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
   <p style="margin-bottom: 24px;">
-    <img src="{logo_url}" alt="Path" width="140" height="40" style="display: block;" />
+    <img src="{logo_url}" alt="Path" width="140" height="48" style="display: block;" />
   </p>
   <p style="font-size: 16px; color: #1a1a1a; line-height: 1.5;">
     Dear {user_name},

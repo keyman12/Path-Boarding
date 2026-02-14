@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import SumsubWebSdk from "@sumsub/websdk-react";
 import { API_BASE, apiGet, apiPost } from "@/lib/api";
-import { PRODUCT_IMAGES } from "@/components/ProductPackageWizard";
+import { PurchasedProductsSummary } from "@/components/PurchasedProductsSummary";
 
 type MccItem = { mcc: string; label: string };
 type UxGroup = { id: string; label: string; items: MccItem[] };
@@ -43,11 +43,13 @@ type InviteInfo = {
 function BoardingRightPanel({ 
   partner, 
   onBack,
-  onSaveForLater
+  onSaveForLater,
+  productPackage
 }: { 
   partner: { name: string; logo_url?: string | null };
   onBack?: { label: string; onClick: () => void; isForward?: boolean };
   onSaveForLater?: () => void;
+  productPackage?: ProductPackageDisplay | null;
 }) {
   const [logoError, setLogoError] = useState(false);
   const logoUrl = partner.logo_url
@@ -99,7 +101,16 @@ function BoardingRightPanel({
           </button>
         )}
       </div>
-      <div className="flex-1 min-h-0" />
+      {productPackage && productPackage.items.length > 0 && (
+        <div className="mt-6 flex-1 min-h-0 flex flex-col min-w-0">
+          <PurchasedProductsSummary
+            productPackage={productPackage}
+            partnerName={partner.name}
+            variant="sidebar"
+          />
+        </div>
+      )}
+      {(!productPackage || productPackage.items.length === 0) && <div className="flex-1 min-h-0" />}
       <nav className="flex flex-col gap-2 text-path-p2 text-white/90 pt-8">
         <a href="#" className="hover:underline">Help</a>
         <a href="#" className="hover:underline">Privacy</a>
@@ -2634,68 +2645,6 @@ export default function BoardingEntryPage() {
               </p>
             )}
 
-            {inviteInfo?.product_package && (
-              <section className="mb-8 p-4 border border-path-grey-200 rounded-lg bg-path-grey-50">
-                <h2 className="text-path-h4 font-poppins text-path-primary mb-2">Your purchased products</h2>
-                <p className="text-path-p2 text-path-grey-600 mb-3">
-                  {inviteInfo.product_package.name}
-                  {inviteInfo.product_package.description && (
-                    <span className="block mt-1">{inviteInfo.product_package.description}</span>
-                  )}
-                </p>
-                <ul className="space-y-3">
-                  {inviteInfo.product_package.items.map((item) => {
-                    const productImage = item.product_code ? PRODUCT_IMAGES[item.product_code] : null;
-                    return (
-                    <li key={item.id} className="flex items-start gap-4 p-3 bg-white border border-path-grey-200 rounded-lg">
-                      {productImage && (
-                        <div className="w-16 h-16 flex-shrink-0 rounded overflow-hidden bg-path-grey-100 flex items-center justify-center">
-                          <Image src={productImage} alt={item.product_name} width={64} height={64} className="w-full h-full object-contain" />
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0 flex flex-col gap-1">
-                      <span className="font-medium text-path-grey-900">{item.product_name}</span>
-                      {item.store_name && (
-                        <span className="text-path-p2 text-path-grey-600">Store: {item.store_name}</span>
-                      )}
-                      {item.store_address && (
-                        <span className="text-path-p2 text-path-grey-600">Address: {item.store_address}</span>
-                      )}
-                      {item.epos_terminal && (
-                        <span className="text-path-p2 text-path-grey-600">EPOS: {item.epos_terminal}</span>
-                      )}
-                      {item.config?.pct != null && (
-                        <span className="text-path-p2 text-path-grey-600">Rate: {(item.config.pct as number)}%</span>
-                      )}
-                      {item.config?.amount != null && (
-                        <span className="text-path-p2 text-path-grey-600">Fee: £{(item.config.amount as number).toFixed(2)}</span>
-                      )}
-                      {item.config?.enabled != null && item.config.enabled && (
-                        <span className="text-path-p2 text-path-grey-600">Enabled</span>
-                      )}
-                      {item.config?.qty != null && (item.config.qty as number) > 1 && (
-                        <span className="text-path-p2 text-path-grey-600">Quantity: {item.config.qty as number}</span>
-                      )}
-                      {item.config?.pos_price_per_month != null && (
-                        <span className="text-path-p2 text-path-grey-600">£{(item.config.pos_price_per_month as number).toFixed(2)}/month</span>
-                      )}
-                      {item.config?.pos_pricing_type === "per_device_service" && item.config?.pos_price_per_device != null && (
-                        <span className="text-path-p2 text-path-grey-600">
-                          £{(item.config.pos_price_per_device as number).toFixed(2)} per device
-                          {item.config?.pos_monthly_service != null && ` + £${(item.config.pos_monthly_service as number).toFixed(2)}/month service`}
-                        </span>
-                      )}
-                      </div>
-                    </li>
-                    );
-                  })}
-                </ul>
-                <p className="text-path-p2 text-path-grey-500 mt-2">
-                  To change your products, please contact {inviteInfo.partner.name}.
-                </p>
-              </section>
-            )}
-
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -3242,7 +3191,12 @@ export default function BoardingEntryPage() {
           © 2026 Path2ai.tech
         </footer>
       </main>
-      {inviteInfo && <BoardingRightPanel partner={inviteInfo.partner} />}
+      {inviteInfo && (
+        <BoardingRightPanel
+          partner={inviteInfo.partner}
+          productPackage={inviteInfo.product_package ?? null}
+        />
+      )}
     </div>
   );
 }

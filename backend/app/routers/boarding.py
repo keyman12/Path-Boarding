@@ -128,6 +128,9 @@ def get_invite_info(
     if invite.product_package_id and invite.product_package:
         pkg = invite.product_package
         item_by_id = {it.id: it for it in pkg.items}
+        dd_by_item: dict = {}
+        for dd in invite.device_details:
+            dd_by_item.setdefault(dd.package_item_id, []).append(dd)
         items = []
         for idx, dd in enumerate(invite.device_details):
             it = item_by_id.get(dd.package_item_id)
@@ -144,6 +147,22 @@ def get_invite_info(
                     store_name=dd.store_name,
                     store_address=dd.store_address,
                     epos_terminal=dd.epos_terminal,
+                )
+            )
+        for it in pkg.items:
+            if it.id in dd_by_item:
+                continue
+            cat = it.catalog_product
+            items.append(
+                ProductPackageItemDisplay(
+                    id=it.id,
+                    product_code=cat.product_code if cat else "",
+                    product_name=cat.name if cat else "",
+                    product_type=cat.product_type if cat else "",
+                    config=it.config,
+                    store_name=None,
+                    store_address=None,
+                    epos_terminal=None,
                 )
             )
         product_package = ProductPackageDisplay(

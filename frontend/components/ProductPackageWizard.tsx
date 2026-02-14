@@ -76,6 +76,7 @@ export function ProductPackageWizard({
 
   const [acquiringPctDisplay, setAcquiringPctDisplay] = useState<Record<string, string>>({});
   const [ecommAmountDisplay, setEcommAmountDisplay] = useState<Record<string, string>>({});
+  const [otherFeeAmountDisplay, setOtherFeeAmountDisplay] = useState<Record<string, string>>({});
 
   const getMinPct = (code: string) => {
     const r = feeScheduleRates[code];
@@ -149,9 +150,11 @@ export function ProductPackageWizard({
           return `${cat.name}: Rate must be at least ${min}%.`;
         }
       }
-      if (cat.product_type === "other_fee" && cfg.amount != null) {
+      if (cat.product_type === "other_fee") {
         const min = getMinAmount(cat.product_code);
-        if ((cfg.amount as number) < min) {
+        const rawAmt = otherFeeAmountDisplay[item.catalog_product_id] ?? (cfg.amount != null ? String(cfg.amount) : "");
+        const amtVal = rawAmt === "" ? min : (parseFloat(rawAmt) ?? min);
+        if (amtVal < min) {
           return `${cat.name}: Fee must be at least £${min.toFixed(2)}.`;
         }
       }
@@ -492,6 +495,7 @@ export function ProductPackageWizard({
               const existing = wizardItems.find((i) => i.catalog_product_id === p.id);
               const minAmt = getMinAmount(p.product_code);
               const amt = (existing?.config?.amount as number) ?? minAmt;
+              const displayVal = otherFeeAmountDisplay[p.id] ?? String(amt);
               return (
                 <div key={p.id} className="flex items-center gap-4">
                   <label className="flex-1">{p.name}</label>
@@ -500,13 +504,20 @@ export function ProductPackageWizard({
                     <input
                       type="text"
                       inputMode="decimal"
-                      value={String(amt)}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        const v = raw === "" ? minAmt : (parseFloat(raw) ?? minAmt);
+                      value={displayVal}
+                      onChange={(e) => setOtherFeeAmountDisplay((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                      onBlur={() => {
+                        const raw = otherFeeAmountDisplay[p.id] ?? String(amt);
+                        const parsed = raw === "" ? minAmt : (parseFloat(raw) ?? minAmt);
+                        const final = Math.max(minAmt, parsed);
+                        setOtherFeeAmountDisplay((prev) => {
+                          const next = { ...prev };
+                          delete next[p.id];
+                          return next;
+                        });
                         const others = wizardItems.filter((i) => i.catalog_product_id !== p.id);
-                        const so = others.length > 0 ? Math.max(...others.map((i) => i.sort_order)) + 1 : 0;
-                        setWizardItems([...others, { catalog_product_id: p.id, config: { amount: v }, sort_order: so }]);
+                        const so = existing?.sort_order ?? (others.length > 0 ? Math.max(...others.map((i) => i.sort_order)) + 1 : 0);
+                        setWizardItems([...others, { catalog_product_id: p.id, config: { amount: final }, sort_order: so }]);
                       }}
                       placeholder={minAmt.toFixed(2)}
                       className="w-24 border border-path-grey-300 rounded px-2 py-1"
@@ -605,6 +616,18 @@ export function ProductPackageWizard({
                     })),
                   ];
                 }
+              } else if (wizardStep === 4) {
+                setOtherFeeAmountDisplay({});
+                nextItems = nextItems.map((it) => {
+                  const p = otherFee.find((o) => o.id === it.catalog_product_id);
+                  if (!p) return it;
+                  const raw = otherFeeAmountDisplay[p.id];
+                  if (raw === undefined) return it;
+                  const minAmt = getMinAmount(p.product_code);
+                  const parsed = raw === "" ? minAmt : (parseFloat(raw) ?? minAmt);
+                  const final = Math.max(minAmt, parsed);
+                  return { ...it, config: { ...it.config, amount: final } };
+                });
               }
               if (nextItems !== wizardItems) setWizardItems(nextItems);
               setWizardStep(wizardStep + 1);
