@@ -21,6 +21,7 @@ function authHeaders(token: string) {
 }
 
 const inputClass = "w-full border border-path-grey-300 rounded-lg px-3 py-2 text-path-p1 min-h-[2.75rem]";
+const selectClass = "w-full h-full border border-path-grey-300 rounded-lg pl-3 pr-10 py-2 text-path-p1 appearance-none bg-white";
 
 function isUnauthorized(res: { error?: string; statusCode?: number }): boolean {
   return res.error != null && (res as { statusCode?: number }).statusCode === 401;
@@ -410,12 +411,19 @@ export default function AdminPage() {
           {changePasswordMessage && <p className="text-path-p2 text-path-primary font-medium mb-2">{changePasswordMessage}</p>}
           {changePasswordError && <p className="text-path-p2 text-path-secondary mb-2">{changePasswordError}</p>}
           <form onSubmit={handleChangeAdminPassword} className="space-y-3 max-w-md">
-            <select value={selectedAdminId} onChange={(e) => setSelectedAdminId(e.target.value)} required className={inputClass}>
-              <option value="">Select administrator</option>
-              {admins.map((a) => (
-                <option key={a.id} value={a.id}>{a.username}</option>
-              ))}
-            </select>
+            <div className="relative h-11">
+              <select value={selectedAdminId} onChange={(e) => setSelectedAdminId(e.target.value)} required className={selectClass}>
+                <option value="">Select administrator</option>
+                {admins.map((a) => (
+                  <option key={a.id} value={a.id}>{a.username}</option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-path-grey-500" aria-hidden>
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
             <input type="password" value={adminPasswordNew} onChange={(e) => setAdminPasswordNew(e.target.value)} placeholder="New password" required minLength={8} className={inputClass} />
             <input type="password" value={adminPasswordNewConfirm} onChange={(e) => setAdminPasswordNewConfirm(e.target.value)} placeholder="Confirm new password" required minLength={8} className={inputClass} />
             <button type="submit" className="px-4 py-2 bg-path-primary text-white rounded-lg font-medium hover:bg-path-primary-light-1">Update password</button>
@@ -438,12 +446,19 @@ export default function AdminPage() {
             <input type="password" value={isvPasswordConfirm} onChange={(e) => setIsvPasswordConfirm(e.target.value)} placeholder="Confirm password" required minLength={8} className={inputClass} />
             <div>
               <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Fee schedule (required)</label>
-              <select value={isvFeeScheduleId} onChange={(e) => setIsvFeeScheduleId(e.target.value)} required className={inputClass}>
-                <option value="">Select fee schedule</option>
-                {feeSchedules.map((fs) => (
-                  <option key={fs.id} value={fs.id}>{fs.name}</option>
-                ))}
-              </select>
+              <div className="relative h-11">
+                <select value={isvFeeScheduleId} onChange={(e) => setIsvFeeScheduleId(e.target.value)} required className={selectClass}>
+                  <option value="">Select fee schedule</option>
+                  {feeSchedules.map((fs) => (
+                    <option key={fs.id} value={fs.id}>{fs.name}</option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-path-grey-500" aria-hidden>
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
               {feeSchedules.length === 0 && <p className="text-path-p2 text-path-grey-500 mt-1">Create a fee schedule first.</p>}
             </div>
             <input type="text" value={isvExternalId} onChange={(e) => setIsvExternalId(e.target.value)} placeholder="External ID (optional)" className={inputClass} />
@@ -462,12 +477,19 @@ export default function AdminPage() {
           {updatePartnerMessage && <p className="text-path-p2 text-path-primary font-medium mb-2">{updatePartnerMessage}</p>}
           {updatePartnerError && <p className="text-path-p2 text-path-secondary mb-2">{updatePartnerError}</p>}
           <form onSubmit={handleUpdatePartner} className="space-y-3 max-w-md">
-            <select value={selectedPartnerId} onChange={(e) => { setSelectedPartnerId(e.target.value); const p = partners.find(x => x.id === e.target.value); if (p) { setPartnerNameEdit(p.name); setPartnerEmailEdit(p.email); setPartnerFeeScheduleIdEdit(p.fee_schedule_id); } setPartnerLogoFile(null); }} className={inputClass}>
-              <option value="">Select partner</option>
-              {partners.map((p) => (
-                <option key={p.id} value={p.id}>{p.name} ({p.email})</option>
-              ))}
-            </select>
+            <div className="relative h-11">
+              <select value={selectedPartnerId} onChange={(e) => { setSelectedPartnerId(e.target.value); const p = partners.find(x => x.id === e.target.value); if (p) { setPartnerNameEdit(p.name); setPartnerEmailEdit(p.email); setPartnerFeeScheduleIdEdit(p.fee_schedule_id); } setPartnerLogoFile(null); }} className={selectClass}>
+                <option value="">Select partner</option>
+                {partners.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name} ({p.email})</option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-path-grey-500" aria-hidden>
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
             {selectedPartner && (
               <>
                 {selectedPartner.logo_url && (
@@ -490,11 +512,18 @@ export default function AdminPage() {
                 <input type="email" value={partnerEmailEdit} onChange={(e) => setPartnerEmailEdit(e.target.value)} placeholder="Email" className={inputClass} />
                 <div>
                   <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Fee schedule</label>
-                  <select value={partnerFeeScheduleIdEdit} onChange={(e) => setPartnerFeeScheduleIdEdit(e.target.value)} className={inputClass}>
-                    {feeSchedules.map((fs) => (
-                      <option key={fs.id} value={fs.id}>{fs.name}</option>
-                    ))}
-                  </select>
+                  <div className="relative h-11">
+                    <select value={partnerFeeScheduleIdEdit} onChange={(e) => setPartnerFeeScheduleIdEdit(e.target.value)} className={selectClass}>
+                      {feeSchedules.map((fs) => (
+                        <option key={fs.id} value={fs.id}>{fs.name}</option>
+                      ))}
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-path-grey-500" aria-hidden>
+                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
                 </div>
                 <input type="password" value={partnerPasswordNew} onChange={(e) => setPartnerPasswordNew(e.target.value)} placeholder="New password (leave blank to keep)" minLength={8} className={inputClass} />
                 <input type="password" value={partnerPasswordNewConfirm} onChange={(e) => setPartnerPasswordNewConfirm(e.target.value)} placeholder="Confirm new password" minLength={8} className={inputClass} />
@@ -781,16 +810,23 @@ function AdminProductPackagesSection({
       <div className="space-y-4">
         <div>
           <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Partner</label>
-          <select
-            value={pkgPartnerId}
-            onChange={(e) => { setPkgPartnerId(e.target.value); setShowCreateWizard(false); }}
-            className={inputClass}
-          >
-            <option value="">Select partner</option>
-            {partners.map((p) => (
-              <option key={p.id} value={p.id}>{p.name} ({p.email})</option>
-            ))}
-          </select>
+          <div className="relative h-11">
+            <select
+              value={pkgPartnerId}
+              onChange={(e) => { setPkgPartnerId(e.target.value); setShowCreateWizard(false); }}
+              className={selectClass}
+            >
+              <option value="">Select partner</option>
+              {partners.map((p) => (
+                <option key={p.id} value={p.id}>{p.name} ({p.email})</option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-path-grey-500" aria-hidden>
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
         </div>
         {!showCreateWizard ? (
           <>

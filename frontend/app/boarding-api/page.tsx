@@ -447,17 +447,24 @@ export default function BoardingApiPage() {
           {generateError && <p className="text-path-p2 text-path-secondary mb-2">{generateError}</p>}
           <form onSubmit={handleGenerateLink} className="space-y-4 max-w-md">
             <div>
-              <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Product package (optional)</label>
-              <select
-                value={selectedPackageUid}
-                onChange={(e) => setSelectedPackageUid(e.target.value)}
-                className="w-full border border-path-grey-300 rounded-lg px-3 py-2 text-path-p1"
-              >
-                <option value="">None</option>
-                {packages.map((p) => (
-                  <option key={p.id} value={p.uid}>{p.name} ({p.uid})</option>
-                ))}
-              </select>
+              <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Product package</label>
+              <div className="relative h-11">
+                <select
+                  value={selectedPackageUid}
+                  onChange={(e) => setSelectedPackageUid(e.target.value)}
+                  className="w-full h-full border border-path-grey-300 rounded-lg pl-3 pr-10 py-2 text-path-p1 appearance-none bg-white"
+                >
+                  <option value="">None</option>
+                  {packages.map((p) => (
+                    <option key={p.id} value={p.uid}>{p.name} ({p.uid})</option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-path-grey-500" aria-hidden>
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
             </div>
             {posDeviceConfig.length > 0 && (
               <div className="space-y-4 border border-path-grey-200 rounded-lg p-3 bg-path-grey-50">
@@ -563,23 +570,23 @@ export default function BoardingApiPage() {
               </div>
             )}
             <div>
-              <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Merchant name (optional)</label>
+              <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Merchant name</label>
               <input
                 type="text"
                 value={merchantName}
                 onChange={(e) => setMerchantName(e.target.value)}
                 placeholder="e.g. Acme Ltd"
-                className="w-full border border-path-grey-300 rounded-lg px-3 py-2 text-path-p1"
+                className="w-full border border-path-grey-300 rounded-lg px-3 py-2 text-path-p1 h-11"
               />
             </div>
             <div>
-              <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Merchant email (optional)</label>
+              <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Merchant email</label>
               <input
                 type="email"
                 value={merchantEmail}
                 onChange={(e) => setMerchantEmail(e.target.value)}
                 placeholder="merchant@example.com"
-                className="w-full border border-path-grey-300 rounded-lg px-3 py-2 text-path-p1"
+                className="w-full border border-path-grey-300 rounded-lg px-3 py-2 text-path-p1 h-11"
               />
             </div>
             <div className="flex flex-wrap gap-3">
