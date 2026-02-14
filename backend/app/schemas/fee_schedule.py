@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -36,12 +36,12 @@ DEFAULT_RATES: dict[str, dict[str, Any]] = {
 
 class FeeScheduleCreate(BaseModel):
     name: str
-    rates: dict[str, dict[str, Any]] | None = None
+    rates: Optional[dict[str, dict[str, Any]]] = None
 
 
 class FeeScheduleUpdate(BaseModel):
-    name: str | None = None
-    rates: dict[str, dict[str, Any]] | None = None
+    name: Optional[str] = None
+    rates: Optional[dict[str, dict[str, Any]]] = None
 
 
 class FeeScheduleResponse(BaseModel):
