@@ -1,6 +1,23 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
+
+export const PRODUCT_IMAGES: Record<string, string> = {
+  pax_a920_pro: "/images/products/pax-a920-pro.png",
+  verifone_p400: "/images/products/verifone-p400.png",
+  softpos: "/images/products/softpos.png",
+  payby_link: "/images/products/payby-link.png",
+  virtual_terminal: "/images/products/qr-code.png",
+};
+
+const ACQUIRING_DISPLAY_NAMES: Record<string, string> = {
+  cnp: "Card Not Present",
+  credit: "Credit Cards",
+  cross_border: "Cross Border Transactions",
+  debit: "Debit Cards",
+  premium: "Premium Cards",
+};
 
 export type CatalogProduct = {
   id: string;
@@ -217,13 +234,22 @@ export function ProductPackageWizard({
               const pricePerMonth = (existing?.config?.pos_price_per_month as number) ?? minPerMonth;
               const pricePerDevice = (existing?.config?.pos_price_per_device as number) ?? minPerDevice;
               const monthlyService = (existing?.config?.pos_monthly_service as number) ?? minService;
+              const productImage = PRODUCT_IMAGES[p.product_code];
               return (
                 <div key={p.id} className="p-3 border border-path-grey-200 rounded-lg space-y-3">
-                  <div className="flex items-center gap-4">
-                    <label className="flex-1 font-medium">{p.name}</label>
-                    <input
-                      type="checkbox"
-                      checked={enabled}
+                  <div className="flex items-start gap-4">
+                    {productImage && (
+                      <div className="w-20 h-20 flex-shrink-0 rounded overflow-hidden bg-path-grey-100 flex items-center justify-center">
+                        <Image src={productImage} alt={p.name} width={80} height={80} className="w-full h-full object-contain" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-4">
+                        <label className="flex-1 font-medium">{p.name}</label>
+                        <input
+                          type="checkbox"
+                          checked={enabled}
+                          className="w-5 h-5 accent-[#FF8A80] rounded border-path-grey-300 cursor-pointer"
                       onChange={(e) => {
                         if (e.target.checked) {
                           const so = wizardItems.length > 0 ? Math.max(...wizardItems.map((i) => i.sort_order)) + 1 : 0;
@@ -236,6 +262,8 @@ export function ProductPackageWizard({
                         }
                       }}
                     />
+                      </div>
+                    </div>
                   </div>
                   {enabled && (
                     <div className="pl-4 border-l-2 border-path-grey-200 space-y-2">
@@ -246,6 +274,7 @@ export function ProductPackageWizard({
                               type="radio"
                               name={`pos-pricing-${p.id}`}
                               checked={pricingType === "per_month"}
+                              className="accent-[#FF8A80] cursor-pointer"
                               onChange={() => {
                                 const others = wizardItems.filter((i) => i.catalog_product_id !== p.id);
                                 const so = existing?.sort_order ?? others.length;
@@ -259,6 +288,7 @@ export function ProductPackageWizard({
                               type="radio"
                               name={`pos-pricing-${p.id}`}
                               checked={pricingType === "per_device_service"}
+                              className="accent-[#FF8A80] cursor-pointer"
                               onChange={() => {
                                 const others = wizardItems.filter((i) => i.catalog_product_id !== p.id);
                                 const so = existing?.sort_order ?? others.length;
@@ -347,14 +377,23 @@ export function ProductPackageWizard({
               const minAmt = getMinAmount(p.product_code) || 0.2;
               const amount = (existing?.config?.amount as number) ?? minAmt;
               const unitLabel = p.product_code === "payby_link" ? "per link" : "per QR code";
+              const productImage = PRODUCT_IMAGES[p.product_code];
               return (
                 <div key={p.id} className="p-3 border border-path-grey-200 rounded-lg space-y-2">
-                  <div className="flex items-center gap-4">
-                    <label className="flex-1 font-medium">{p.name}</label>
-                    <input
-                      type="checkbox"
-                      checked={enabled}
-                      onChange={(e) => {
+                  <div className="flex items-start gap-4">
+                    {productImage && (
+                      <div className="w-20 h-20 flex-shrink-0 rounded overflow-hidden bg-path-grey-100 flex items-center justify-center">
+                        <Image src={productImage} alt={p.name} width={80} height={80} className="w-full h-full object-contain" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-4">
+                        <label className="flex-1 font-medium">{p.name}</label>
+                        <input
+                          type="checkbox"
+                          checked={enabled}
+                          className="w-5 h-5 accent-[#FF8A80] rounded border-path-grey-300 cursor-pointer"
+                          onChange={(e) => {
                         if (e.target.checked) {
                           const so = wizardItems.length > 0 ? Math.max(...wizardItems.map((i) => i.sort_order)) + 1 : 0;
                           setWizardItems([...wizardItems, { catalog_product_id: p.id, config: { enabled: true, amount: minAmt }, sort_order: so }]);
@@ -363,6 +402,8 @@ export function ProductPackageWizard({
                         }
                       }}
                     />
+                      </div>
+                    </div>
                   </div>
                   {enabled && (
                     <div className="pl-4 border-l-2 border-path-grey-200 flex items-center gap-2">
@@ -407,30 +448,34 @@ export function ProductPackageWizard({
               const minPct = getMinPct(p.product_code);
               const pct = (existing?.config?.pct as number) ?? minPct;
               const displayVal = acquiringPctDisplay[p.id] ?? String(pct);
+              const displayName = ACQUIRING_DISPLAY_NAMES[p.product_code] ?? p.name;
               return (
                 <div key={p.id} className="flex items-center gap-4">
-                  <label className="flex-1">{p.name}</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={displayVal}
-                    onChange={(e) => setAcquiringPctDisplay((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                    onBlur={() => {
-                      const raw = acquiringPctDisplay[p.id] ?? String(pct);
-                      const parsed = raw === "" ? minPct : (parseFloat(raw) ?? minPct);
-                      const final = Math.max(minPct, parsed);
-                      setAcquiringPctDisplay((prev) => {
-                        const next = { ...prev };
-                        delete next[p.id];
-                        return next;
-                      });
-                      const others = wizardItems.filter((i) => i.catalog_product_id !== p.id);
-                      const so = existing?.sort_order ?? (others.length > 0 ? Math.max(...others.map((i) => i.sort_order)) + 1 : 0);
-                      setWizardItems([...others, { catalog_product_id: p.id, config: { pct: final }, sort_order: so }]);
-                    }}
-                    placeholder={String(minPct)}
-                    className="w-24 border border-path-grey-300 rounded px-2 py-1"
-                  />
+                  <label className="flex-1">{displayName}</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={displayVal}
+                      onChange={(e) => setAcquiringPctDisplay((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                      onBlur={() => {
+                        const raw = acquiringPctDisplay[p.id] ?? String(pct);
+                        const parsed = raw === "" ? minPct : (parseFloat(raw) ?? minPct);
+                        const final = Math.max(minPct, parsed);
+                        setAcquiringPctDisplay((prev) => {
+                          const next = { ...prev };
+                          delete next[p.id];
+                          return next;
+                        });
+                        const others = wizardItems.filter((i) => i.catalog_product_id !== p.id);
+                        const so = existing?.sort_order ?? (others.length > 0 ? Math.max(...others.map((i) => i.sort_order)) + 1 : 0);
+                        setWizardItems([...others, { catalog_product_id: p.id, config: { pct: final }, sort_order: so }]);
+                      }}
+                      placeholder={String(minPct)}
+                      className="w-24 border border-path-grey-300 rounded px-2 py-1"
+                    />
+                    <span className="text-path-p2">%</span>
+                  </div>
                 </div>
               );
             })}
@@ -441,7 +486,7 @@ export function ProductPackageWizard({
       {wizardStep === 4 && (
         <div>
           <h3 className="font-medium mb-2">Other fees (£)</h3>
-          <p className="text-path-p2 text-path-grey-600 mb-2">Set amount for each.</p>
+          <p className="text-path-p2 text-path-grey-600 mb-2">Additional fees, priced per transaction as a fixed fee.</p>
           <div className="space-y-2">
             {otherFee.map((p) => {
               const existing = wizardItems.find((i) => i.catalog_product_id === p.id);
@@ -450,20 +495,23 @@ export function ProductPackageWizard({
               return (
                 <div key={p.id} className="flex items-center gap-4">
                   <label className="flex-1">{p.name}</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={String(amt)}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      const v = raw === "" ? minAmt : (parseFloat(raw) ?? minAmt);
-                      const others = wizardItems.filter((i) => i.catalog_product_id !== p.id);
-                      const so = others.length > 0 ? Math.max(...others.map((i) => i.sort_order)) + 1 : 0;
-                      setWizardItems([...others, { catalog_product_id: p.id, config: { amount: v }, sort_order: so }]);
-                    }}
-                    placeholder={minAmt.toFixed(2)}
-                    className="w-24 border border-path-grey-300 rounded px-2 py-1"
-                  />
+                  <div className="flex items-center gap-2">
+                    <span className="text-path-p2">£</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={String(amt)}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        const v = raw === "" ? minAmt : (parseFloat(raw) ?? minAmt);
+                        const others = wizardItems.filter((i) => i.catalog_product_id !== p.id);
+                        const so = others.length > 0 ? Math.max(...others.map((i) => i.sort_order)) + 1 : 0;
+                        setWizardItems([...others, { catalog_product_id: p.id, config: { amount: v }, sort_order: so }]);
+                      }}
+                      placeholder={minAmt.toFixed(2)}
+                      className="w-24 border border-path-grey-300 rounded px-2 py-1"
+                    />
+                  </div>
                 </div>
               );
             })}

@@ -65,6 +65,7 @@ export default function AdminPage() {
   const [setupPartnerError, setSetupPartnerError] = useState<string | null>(null);
   const [updatePartnerMessage, setUpdatePartnerMessage] = useState<string | null>(null);
   const [updatePartnerError, setUpdatePartnerError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"admin" | "partnerships" | "packages" | "fee-schedules">("admin");
 
   useEffect(() => {
     const t = typeof window !== "undefined" ? localStorage.getItem(ADMIN_TOKEN_KEY) : null;
@@ -387,10 +388,51 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <div className="max-w-3xl space-y-8">
-        <h1 className="text-path-h2 font-poppins text-path-primary">Path Boarding Admin Dashboard</h1>
+      <div className="max-w-3xl">
+        <h1 className="text-path-h2 font-poppins text-path-primary mb-4">Path Boarding Admin Dashboard</h1>
 
-        {/* 1. Create Path Administrator Account */}
+        <div className="flex flex-wrap gap-2 border-b border-path-grey-200 mb-6">
+          <button
+            type="button"
+            onClick={() => setActiveTab("admin")}
+            className={`px-4 py-2.5 text-path-p2 font-medium rounded-t-lg transition-colors min-h-[44px] touch-manipulation ${
+              activeTab === "admin" ? "bg-path-primary text-white" : "bg-path-grey-100 text-path-grey-700 hover:bg-path-grey-200"
+            }`}
+          >
+            Admin
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("partnerships")}
+            className={`px-4 py-2.5 text-path-p2 font-medium rounded-t-lg transition-colors min-h-[44px] touch-manipulation ${
+              activeTab === "partnerships" ? "bg-path-primary text-white" : "bg-path-grey-100 text-path-grey-700 hover:bg-path-grey-200"
+            }`}
+          >
+            Partnerships
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("packages")}
+            className={`px-4 py-2.5 text-path-p2 font-medium rounded-t-lg transition-colors min-h-[44px] touch-manipulation ${
+              activeTab === "packages" ? "bg-path-primary text-white" : "bg-path-grey-100 text-path-grey-700 hover:bg-path-grey-200"
+            }`}
+          >
+            Product Packages
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("fee-schedules")}
+            className={`px-4 py-2.5 text-path-p2 font-medium rounded-t-lg transition-colors min-h-[44px] touch-manipulation ${
+              activeTab === "fee-schedules" ? "bg-path-primary text-white" : "bg-path-grey-100 text-path-grey-700 hover:bg-path-grey-200"
+            }`}
+          >
+            Fee Schedules
+          </button>
+        </div>
+
+        {activeTab === "admin" && (
+        <div className="space-y-8">
+        {/* Create Path Administrator Account */}
         <section className="border border-path-grey-300 rounded-lg p-4">
           <h2 className="text-path-h4 font-poppins text-path-primary mb-3">Create a New Path Administrator Account</h2>
           <p className="text-path-p2 text-path-grey-600 mb-3">Add a new admin user with username and password.</p>
@@ -429,11 +471,12 @@ export default function AdminPage() {
             <button type="submit" className="px-4 py-2 bg-path-primary text-white rounded-lg font-medium hover:bg-path-primary-light-1">Update password</button>
           </form>
         </section>
+        </div>
+        )}
 
-        {/* 2b. Fee Schedules */}
-        <FeeSchedulesSection token={token} feeSchedules={feeSchedules} loadFeeSchedules={loadFeeSchedules} authHeaders={authHeaders} clearAdminAndRedirect={clearAdminAndRedirect} />
-
-        {/* 3. Setup New Partnership Account */}
+        {activeTab === "partnerships" && (
+        <div className="space-y-8">
+        {/* Setup New Partnership Account */}
         <section className="border border-path-grey-300 rounded-lg p-4">
           <h2 className="text-path-h4 font-poppins text-path-primary mb-3">Setup a New Partnership Account</h2>
           <p className="text-path-p2 text-path-grey-600 mb-3">Create a new partner with name, email, password. Requires a fee schedule. Optional logo (max 512KB for welcome screen).</p>
@@ -535,14 +578,21 @@ export default function AdminPage() {
             </div>
           </form>
         </section>
+        </div>
+        )}
 
-        {/* 5. Product Packages (Admin) */}
+        {activeTab === "packages" && (
         <AdminProductPackagesSection
           token={token}
           partners={partners}
           authHeaders={authHeaders}
           clearAdminAndRedirect={clearAdminAndRedirect}
         />
+        )}
+
+        {activeTab === "fee-schedules" && (
+        <FeeSchedulesSection token={token} feeSchedules={feeSchedules} loadFeeSchedules={loadFeeSchedules} authHeaders={authHeaders} clearAdminAndRedirect={clearAdminAndRedirect} />
+        )}
       </div>
 
       <footer className="mt-12 pt-6 border-t border-path-grey-200 text-path-p2 text-path-grey-500">

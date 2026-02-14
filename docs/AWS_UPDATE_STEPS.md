@@ -37,6 +37,7 @@ cd /opt/boarding/repo/frontend
 sudo npm install
 sudo npm run build
 ```
+**Note:** Product images in `frontend/public/images/products/` are included in the repo and automatically served after build. No extra upload step is needed.
 
 ### 4. Restart Services
 ```bash

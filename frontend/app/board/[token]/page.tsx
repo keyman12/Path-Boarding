@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import SumsubWebSdk from "@sumsub/websdk-react";
 import { API_BASE, apiGet, apiPost } from "@/lib/api";
+import { PRODUCT_IMAGES } from "@/components/ProductPackageWizard";
 
 type MccItem = { mcc: string; label: string };
 type UxGroup = { id: string; label: string; items: MccItem[] };
@@ -2643,8 +2644,16 @@ export default function BoardingEntryPage() {
                   )}
                 </p>
                 <ul className="space-y-3">
-                  {inviteInfo.product_package.items.map((item) => (
-                    <li key={item.id} className="flex flex-col gap-1 p-3 bg-white border border-path-grey-200 rounded-lg">
+                  {inviteInfo.product_package.items.map((item) => {
+                    const productImage = item.product_code ? PRODUCT_IMAGES[item.product_code] : null;
+                    return (
+                    <li key={item.id} className="flex items-start gap-4 p-3 bg-white border border-path-grey-200 rounded-lg">
+                      {productImage && (
+                        <div className="w-16 h-16 flex-shrink-0 rounded overflow-hidden bg-path-grey-100 flex items-center justify-center">
+                          <Image src={productImage} alt={item.product_name} width={64} height={64} className="w-full h-full object-contain" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0 flex flex-col gap-1">
                       <span className="font-medium text-path-grey-900">{item.product_name}</span>
                       {item.store_name && (
                         <span className="text-path-p2 text-path-grey-600">Store: {item.store_name}</span>
@@ -2676,8 +2685,10 @@ export default function BoardingEntryPage() {
                           {item.config?.pos_monthly_service != null && ` + £${(item.config.pos_monthly_service as number).toFixed(2)}/month service`}
                         </span>
                       )}
+                      </div>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
                 <p className="text-path-p2 text-path-grey-500 mt-2">
                   To change your products, please contact {inviteInfo.partner.name}.
