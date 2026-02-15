@@ -44,12 +44,14 @@ function BoardingRightPanel({
   partner, 
   onBack,
   onSaveForLater,
-  productPackage
+  productPackage,
+  productSummaryTitle
 }: { 
   partner: { name: string; logo_url?: string | null };
   onBack?: { label: string; onClick: () => void; isForward?: boolean };
   onSaveForLater?: () => void;
   productPackage?: ProductPackageDisplay | null;
+  productSummaryTitle?: string;
 }) {
   const [logoError, setLogoError] = useState(false);
   const logoUrl = partner.logo_url
@@ -92,14 +94,6 @@ function BoardingRightPanel({
             )}
           </button>
         )}
-        {onSaveForLater && (
-          <button
-            onClick={onSaveForLater}
-            className="mt-4 text-path-p2 text-white/90 hover:text-white transition-colors underline"
-          >
-            Save for later
-          </button>
-        )}
       </div>
       {productPackage && productPackage.items.length > 0 && (
         <div className="mt-6 flex-1 min-h-0 flex flex-col min-w-0">
@@ -107,11 +101,20 @@ function BoardingRightPanel({
             productPackage={productPackage}
             partnerName={partner.name}
             variant="sidebar"
+            title={productSummaryTitle}
           />
         </div>
       )}
       {(!productPackage || productPackage.items.length === 0) && <div className="flex-1 min-h-0" />}
-      <nav className="flex flex-col gap-2 text-path-p2 text-white/90 pt-8">
+      <div className="flex flex-col gap-2 pt-8 text-path-p2 text-white/90">
+        {onSaveForLater && (
+          <button
+            onClick={onSaveForLater}
+            className="text-left hover:text-white transition-colors underline"
+          >
+            Save for later
+          </button>
+        )}
         <a href="#" className="hover:underline">Help</a>
         <a href="#" className="hover:underline">Privacy</a>
         <a href="#" className="hover:underline">Terms and Conditions</a>
@@ -125,7 +128,7 @@ function BoardingRightPanel({
             <option value="en">English</option>
           </select>
         </div>
-      </nav>
+      </div>
     </aside>
   );
 }
@@ -139,7 +142,7 @@ export default function BoardingEntryPage() {
   const [loading, setLoading] = useState(true);
   const [linkError, setLinkError] = useState<string | null>(null);
 
-  const [step, setStep] = useState<"form" | "verify" | "done" | "step2" | "step3" | "step4" | "step5" | "step6">("form");
+  const [step, setStep] = useState<"form" | "verify" | "done" | "step2" | "step3" | "step4" | "step5" | "step6" | "review">("form");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -190,6 +193,9 @@ export default function BoardingEntryPage() {
   const [sumsubLoading, setSumsubLoading] = useState(false);
   const [sumsubError, setSumsubError] = useState<string | null>(null);
   const [verificationStatus, setVerificationStatus] = useState<"pending" | "completed" | "rejected" | null>(null);
+  const [lastVerifiedIdentityCritical, setLastVerifiedIdentityCritical] = useState<{
+    first: string; last: string; dob: string; country: string; postcode: string; line1: string; line2: string; town: string;
+  } | null>(null);
 
   // Step 4: Business information
   const [businessType, setBusinessType] = useState<"ltd" | "llp" | "sole_trader" | "">("");
@@ -287,6 +293,8 @@ export default function BoardingEntryPage() {
   const [accountNumberError, setAccountNumberError] = useState<string | null>(null);
   const [ibanError, setIbanError] = useState<string | null>(null);
   const [step6Submitting, setStep6Submitting] = useState(false);
+  const [reviewAgreeChecked, setReviewAgreeChecked] = useState(false);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
 
   // Telephone: digits only, 10–15 digits (e.g. UK mobile 07943 490 548 = 11 digits)
   function validatePhoneNumber(value: string): string | null {
@@ -555,6 +563,7 @@ export default function BoardingEntryPage() {
           address_town?: string;
           phone_country_code?: string;
           phone_number?: string;
+          sumsub_verification_status?: string | null;
           vat_number?: string;
           customer_industry?: string;
           estimated_monthly_card_volume?: string;
@@ -621,6 +630,24 @@ export default function BoardingEntryPage() {
           if (res.data.phone_number) {
             setPhoneNumber(res.data.phone_number);
             setVerifiedFields((f) => ({ ...f, phone: true }));
+          }
+          if (res.data.sumsub_verification_status != null) {
+            setVerificationStatus(res.data.sumsub_verification_status as "pending" | "completed" | "rejected");
+            if (res.data.sumsub_verification_status === "completed" && res.data.legal_first_name != null && res.data.legal_last_name != null) {
+              setLastVerifiedIdentityCritical({
+                first: res.data.legal_first_name,
+                last: res.data.legal_last_name,
+                dob: res.data.date_of_birth ?? "",
+                country: res.data.address_country ?? "",
+                postcode: res.data.address_postcode ?? "",
+                line1: res.data.address_line1 ?? "",
+                line2: res.data.address_line2 ?? "",
+                town: res.data.address_town ?? "",
+              });
+            }
+          } else {
+            setVerificationStatus(null);
+            setLastVerifiedIdentityCritical(null);
           }
           
           // Pre-populate step 5 business details
@@ -988,7 +1015,7 @@ export default function BoardingEntryPage() {
       const payload: { current_step: string; vat_number?: string; customer_industry?: string; estimated_monthly_card_volume?: string; average_transaction_value?: string; delivery_timeframe?: string; customer_support_email?: string; customer_websites?: string; product_description?: string; bank_account_name?: string; bank_currency?: string; bank_country?: string; bank_sort_code?: string; bank_account_number?: string; bank_iban?: string } = {
         current_step: step,
       };
-      if (step === "step5") {
+      if (step === "step5" || step === "review") {
         payload.vat_number = vatNumber;
         payload.customer_industry = customerIndustry;
         payload.estimated_monthly_card_volume = estimatedMonthlyCardVolume;
@@ -998,7 +1025,7 @@ export default function BoardingEntryPage() {
         payload.customer_websites = customerWebsites;
         payload.product_description = productDescription;
       }
-      if (step === "step6") {
+      if (step === "step6" || step === "review") {
         payload.bank_account_name = accountName;
         payload.bank_currency = bankCurrency;
         payload.bank_country = bankCountry;
@@ -1119,7 +1146,16 @@ export default function BoardingEntryPage() {
       setVerificationStatus(status);
       
       if (status === "completed") {
-        // Move to next step after a short delay
+        setLastVerifiedIdentityCritical({
+          first: legalFirstName.trim(),
+          last: legalLastName.trim(),
+          dob: dateOfBirth.trim(),
+          country: addressCountry.trim(),
+          postcode: addressPostcode.trim(),
+          line1: addressLine1.trim(),
+          line2: addressLine2.trim(),
+          town: addressTown.trim(),
+        });
         setTimeout(() => {
           setStep("step4");
         }, 2000);
@@ -1207,7 +1243,26 @@ export default function BoardingEntryPage() {
       setPersonalDetailsError(res.error);
       return;
     }
-    setStep("step3");
+    const identityUnchanged =
+      verificationStatus === "completed" &&
+      lastVerifiedIdentityCritical &&
+      first === lastVerifiedIdentityCritical.first &&
+      last === lastVerifiedIdentityCritical.last &&
+      dob === lastVerifiedIdentityCritical.dob &&
+      country === lastVerifiedIdentityCritical.country &&
+      postcode === lastVerifiedIdentityCritical.postcode &&
+      line1 === lastVerifiedIdentityCritical.line1 &&
+      (line2 || "") === lastVerifiedIdentityCritical.line2 &&
+      town === lastVerifiedIdentityCritical.town;
+    if (identityUnchanged) {
+      setStep("step4");
+    } else {
+      setVerificationStatus(null);
+      setLastVerifiedIdentityCritical(null);
+      setSumsubToken(null);
+      setSumsubError(null);
+      setStep("step3");
+    }
   }
 
   const PHONE_COUNTRY_CODES = [
@@ -1696,9 +1751,12 @@ export default function BoardingEntryPage() {
                     Thank you for completing your identity verification. We're now processing your information.
                   </p>
                 </div>
-                <p className="text-path-p2 text-path-grey-600 text-center">
-                  Redirecting to next step...
-                </p>
+                <button
+                  onClick={() => setStep("step4")}
+                  className="w-full bg-path-primary text-white py-3 px-4 rounded-lg font-medium hover:bg-path-primary-light-1 transition-colors"
+                >
+                  Continue
+                </button>
               </div>
             ) : verificationStatus === "rejected" ? (
               <div className="space-y-4">
@@ -3073,7 +3131,7 @@ export default function BoardingEntryPage() {
         setStep6Submitting(false);
         return;
       }
-      setStep("done");
+      setStep("review");
       setStep6Submitting(false);
     } catch {
       alert("Failed to save. Please try again.");
@@ -3265,6 +3323,279 @@ export default function BoardingEntryPage() {
           <BoardingRightPanel
             partner={inviteInfo.partner}
             onBack={{ label: "Business Details", onClick: () => setStep("step5") }}
+            onSaveForLater={() => setShowSaveForLaterModal(true)}
+          />
+        )}
+        {showSaveForLaterModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full">
+              {!saveForLaterSuccess ? (
+                <>
+                  <h2 className="text-path-h3 font-poppins text-path-primary mb-4">Save for later</h2>
+                  <p className="text-path-p1 text-path-grey-700 mb-4">Your progress has been saved and is available for the next 14 days for you to return and complete.</p>
+                  <p className="text-path-p1 text-path-grey-700 mb-6">We&apos;ll send an email to your email address with a link that will take you to the merchant boarding login screen.</p>
+                  <div className="flex gap-3">
+                    <button onClick={() => setShowSaveForLaterModal(false)} className="flex-1 px-4 py-2 border border-path-grey-300 rounded-lg text-path-grey-700 hover:bg-path-grey-100 transition-colors">Cancel</button>
+                    <button onClick={handleSaveForLater} disabled={saveForLaterLoading} className="flex-1 px-4 py-2 bg-path-primary text-white rounded-lg hover:bg-path-primary-light-1 transition-colors disabled:opacity-50">{saveForLaterLoading ? "Sending..." : "Continue"}</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-path-h3 font-poppins text-path-primary mb-4">Email sent!</h2>
+                  <p className="text-path-p1 text-path-grey-700 mb-6">We&apos;ve sent a link to your email address. You can use it to return and complete your boarding anytime within the next 14 days.</p>
+                  <button onClick={() => { setShowSaveForLaterModal(false); setSaveForLaterSuccess(false); router.push("/"); }} className="w-full px-4 py-2 bg-path-primary text-white rounded-lg hover:bg-path-primary-light-1 transition-colors">Close</button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Helper: get industry label from MCC taxonomy
+  function getIndustryLabel(): string {
+    if (!customerIndustry || !mccTaxonomy) return "";
+    const ux = mccTaxonomy.ux_taxonomy ?? [];
+    for (const tier of ux) {
+      for (const child of tier.children ?? []) {
+        const item = child.items?.find((i) => i.mcc === customerIndustry);
+        if (item) return `${item.mcc}, ${item.label}`;
+      }
+    }
+    return customerIndustry;
+  }
+
+  if (step === "review") {
+    const businessSetupCompanyName = selectedCompany?.name ?? (businessType === "sole_trader" ? "Sole Trader" : "");
+    const businessSetupType = businessType === "ltd" ? "Limited Company" : businessType === "llp" ? "Limited Liability Partnership" : "Sole Trader";
+    const businessSetupIndustry = getIndustryLabel();
+    const hasBusinessSetup = !!(selectedCompany || businessType === "sole_trader");
+
+    const firstWebsite = customerWebsites?.trim().split(",")[0]?.trim() ?? "";
+    const isValidUrl = (s: string) => /^https?:\/\/[^\s]+$/i.test(s);
+    const websiteUrl = firstWebsite && isValidUrl(firstWebsite) ? firstWebsite : firstWebsite.startsWith("www.") ? `https://${firstWebsite}` : firstWebsite;
+    const websiteIsClickable = websiteUrl && isValidUrl(websiteUrl);
+
+    const hasBusinessDetails = !!(customerWebsites?.trim() || customerSupportEmail?.trim() || productDescription?.trim());
+    const directorName = `${legalFirstName} ${legalLastName}`.trim();
+    const hasPersonalDetails = !!(directorName || addressLine1 || dateOfBirth || phoneNumber);
+    const hasPayoutAccount = !!(accountName?.trim() || bankCurrency || bankCountry);
+
+    return (
+      <div className="flex min-h-screen">
+        <main className="flex-1 flex flex-col p-6 md:p-8 font-roboto bg-white text-path-grey-900">
+          <header className="flex items-center gap-4 mb-8">
+            <Image src="/logo-path.png" alt="Path" width={140} height={40} />
+          </header>
+          <div className="flex-1 max-w-2xl mx-auto w-full">
+            <nav className="flex items-center flex-wrap gap-1 text-path-p2 text-path-grey-600 mb-6" aria-label="Breadcrumb">
+              <button type="button" onClick={() => setStep("form")} className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer">
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0"><Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" /></span>
+                Account
+              </button>
+              <span className="mx-1 text-path-grey-400">/</span>
+              <button type="button" onClick={() => setStep("step2")} className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer">
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0"><Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" /></span>
+                Personal Details
+              </button>
+              <span className="mx-1 text-path-grey-400">/</span>
+              <button type="button" onClick={() => setStep("step3")} className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer">
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0"><Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" /></span>
+                Verify
+              </button>
+              <span className="mx-1 text-path-grey-400">/</span>
+              <button type="button" onClick={() => setStep("step4")} className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer">
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0"><Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" /></span>
+                Business
+              </button>
+              <span className="mx-1 text-path-grey-400">/</span>
+              <button type="button" onClick={() => setStep("step5")} className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer">
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0"><Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" /></span>
+                Business Details
+              </button>
+              <span className="mx-1 text-path-grey-400">/</span>
+              <button type="button" onClick={() => setStep("step6")} className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer">
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0"><Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" /></span>
+                Bank Details
+              </button>
+              <span className="mx-1 text-path-grey-400">/</span>
+              <span className="flex items-center gap-1.5 font-medium text-path-primary">
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0"><Image src="/icons/form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain" /></span>
+                Review and Submit
+              </span>
+            </nav>
+            <h1 className="text-path-h2 font-poppins text-path-primary mb-2">Review and Submit</h1>
+            <p className="text-path-p1 text-path-grey-700 mb-8">Take a moment to check your information and product selection.</p>
+
+            <div className="space-y-6 mb-8">
+              <div>
+                <h3 className="font-semibold text-path-grey-900 mb-2 text-left">Business Setup</h3>
+                <div className="p-4 border border-path-grey-200 rounded-lg bg-white">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      {hasBusinessSetup ? (
+                        <>
+                          <p className="text-xs font-medium text-path-grey-600 mb-1">Company Name</p>
+                          <p className="text-xs text-path-grey-700 mb-1">{businessSetupCompanyName}</p>
+                          <p className="text-xs text-path-grey-700 mb-1">{businessSetupType}</p>
+                          <p className="text-xs text-path-grey-700 mb-1">Registered in the UK</p>
+                          {businessSetupIndustry && (
+                            <p className="text-xs text-path-grey-700">{businessSetupIndustry.length > 50 ? businessSetupIndustry.slice(0, 47) + "..." : businessSetupIndustry}</p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-xs text-path-grey-500">Add summary info</p>
+                      )}
+                    </div>
+                    <button type="button" onClick={() => setStep("step4")} className="shrink-0 text-xs text-path-secondary font-medium hover:underline">
+                      Edit
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="font-semibold text-path-grey-900 mb-2 text-left">Business Details</h3>
+                <div className="p-4 border border-path-grey-200 rounded-lg bg-white">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      {hasBusinessDetails ? (
+                        <>
+                          {firstWebsite && (
+                            <>
+                              <p className="text-xs font-medium text-path-grey-600 mb-1">Company Web Site</p>
+                              <p className="text-xs text-path-grey-700 mb-2">
+                                {websiteIsClickable ? (
+                                  <a href={websiteUrl} target="_blank" rel="noopener noreferrer" className="text-path-primary hover:underline">{firstWebsite}</a>
+                                ) : (
+                                  firstWebsite
+                                )}
+                              </p>
+                            </>
+                          )}
+                          {customerSupportEmail?.trim() && (
+                            <p className="text-xs text-path-grey-700 mb-1">Support Email Address: <span className="font-medium text-path-grey-600">{customerSupportEmail.trim()}</span></p>
+                          )}
+                          {productDescription?.trim() && (
+                            <p className="text-xs text-path-grey-700">Product and Service Description: {productDescription.trim().length > 60 ? productDescription.trim().slice(0, 57) + "..." : productDescription.trim()}</p>
+                          )}
+                          {!firstWebsite && !customerSupportEmail?.trim() && !productDescription?.trim() && (
+                            <p className="text-xs text-path-grey-500">Add summary info</p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-xs text-path-grey-500">Add summary info</p>
+                      )}
+                    </div>
+                    <button type="button" onClick={() => setStep("step5")} className="shrink-0 text-xs text-path-secondary font-medium hover:underline">
+                      Edit
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="font-semibold text-path-grey-900 mb-2 text-left">Personal Details</h3>
+                <div className="p-4 border border-path-grey-200 rounded-lg bg-white">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      {hasPersonalDetails ? (
+                        <>
+                          <p className="text-xs font-medium text-path-grey-600 mb-1">Director</p>
+                          <p className="text-xs text-path-grey-700 mb-1">{directorName || "—"}</p>
+                          {addressLine1 && <p className="text-xs text-path-grey-700 mb-1">{[addressLine1, addressLine2].filter(Boolean).join(", ")}</p>}
+                          {addressTown && <p className="text-xs text-path-grey-700 mb-1">{[addressTown, addressPostcode].filter(Boolean).join(" ")}</p>}
+                          {addressCountry && <p className="text-xs text-path-grey-700 mb-1">{addressCountry}</p>}
+                          {dateOfBirth && <p className="text-xs text-path-grey-700 mb-1">DOB: {dateOfBirth}</p>}
+                          {phoneNumber && <p className="text-xs text-path-grey-700">Phone: {`${phoneCountryCode} ${phoneNumber}`.trim()}</p>}
+                        </>
+                      ) : (
+                        <p className="text-xs text-path-grey-500">Add summary info</p>
+                      )}
+                    </div>
+                    <button type="button" onClick={() => setStep("step2")} className="shrink-0 text-xs text-path-secondary font-medium hover:underline">
+                      Edit
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="font-semibold text-path-grey-900 mb-2 text-left">Payout Account</h3>
+                <div className="p-4 border border-path-grey-200 rounded-lg bg-white">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      {hasPayoutAccount ? (
+                        <>
+                          <p className="text-xs font-medium text-path-grey-600 mb-1">Account Name</p>
+                          <p className="text-xs text-path-grey-700 mb-1">{accountName?.trim() || "—"}</p>
+                          {bankCurrency && bankCountry && <p className="text-xs text-path-grey-700 mb-1">{bankCurrency} – {bankCountry}</p>}
+                          {isUkBank && sortCode && accountNumber && (
+                            <>
+                              <p className="text-xs text-path-grey-700 mb-1">Sort code: {sortCode}</p>
+                              <p className="text-xs text-path-grey-700">Account: ****{accountNumber.slice(-4)}</p>
+                            </>
+                          )}
+                          {!isUkBank && iban && (
+                            <p className="text-xs text-path-grey-700">IBAN: {iban.replace(/\s/g, "").slice(0, 4)}****{iban.replace(/\s/g, "").slice(-4)}</p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-xs text-path-grey-500">Add summary info</p>
+                      )}
+                    </div>
+                    <button type="button" onClick={() => setStep("step6")} className="shrink-0 text-xs text-path-secondary font-medium hover:underline">
+                      Edit
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mb-8">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={reviewAgreeChecked}
+                  onChange={(e) => setReviewAgreeChecked(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-path-grey-300 text-path-primary focus:ring-path-primary"
+                />
+                <span className="text-path-p2 text-path-grey-700">
+                  By selecting Agree and submit, you accept the{" "}
+                  <Link href="/legal/linked-account-agreement" className="text-path-primary font-medium underline hover:no-underline" target="_blank" rel="noopener noreferrer">
+                    Path Linked Account Agreement
+                  </Link>
+                  , consent to receive automated text messages, and certify that the information provided is complete and accurate.
+                </span>
+              </label>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (!reviewAgreeChecked) return;
+                setReviewSubmitting(true);
+                setStep("done");
+                setReviewSubmitting(false);
+              }}
+              disabled={!reviewAgreeChecked || reviewSubmitting}
+              className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
+                reviewAgreeChecked && !reviewSubmitting ? "bg-path-primary text-white hover:bg-path-primary-light-1" : "bg-path-grey-200 text-path-grey-500 cursor-not-allowed"
+              }`}
+            >
+              {reviewSubmitting ? "Submitting..." : "Review and Submit"}
+            </button>
+          </div>
+          <footer className="mt-12 pt-6 border-t border-path-grey-200 text-path-p2 text-path-grey-500 text-center">
+            © 2026 Path2ai.tech
+          </footer>
+        </main>
+        {inviteInfo && (
+          <BoardingRightPanel
+            partner={inviteInfo.partner}
+            productPackage={inviteInfo.product_package ?? null}
+            productSummaryTitle="Your product selection"
             onSaveForLater={() => setShowSaveForLaterModal(true)}
           />
         )}

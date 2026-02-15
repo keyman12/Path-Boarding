@@ -51,6 +51,7 @@ type PurchasedProductsSummaryProps = {
   productPackage: ProductPackageDisplay;
   partnerName: string;
   variant?: "default" | "sidebar";
+  title?: string;
 };
 
 function formatPrice(item: ProductPackageItemDisplay): string {
@@ -81,7 +82,7 @@ function formatPrice(item: ProductPackageItemDisplay): string {
   return "—";
 }
 
-export function PurchasedProductsSummary({ productPackage, partnerName, variant = "default" }: PurchasedProductsSummaryProps) {
+export function PurchasedProductsSummary({ productPackage, partnerName, variant = "default", title = "Your purchase" }: PurchasedProductsSummaryProps) {
   const [activeTab, setActiveTab] = useState<"products" | "fees">("products");
 
   const productsItems = productPackage.items.filter(
@@ -101,7 +102,7 @@ export function PurchasedProductsSummary({ productPackage, partnerName, variant 
   return (
     <section className={`overflow-hidden ${isSidebar ? "flex flex-col min-h-0 bg-transparent" : "mb-8 rounded-xl border border-path-grey-200 bg-white shadow-sm"}`}>
       <div className={`shrink-0 ${isSidebar ? "px-0 py-3 border-b border-white/20" : "bg-gradient-to-r from-path-primary/5 to-path-primary/10 border-b border-path-grey-200 px-5 py-4"}`}>
-        <h2 className={`font-poppins ${isSidebar ? "text-path-p1 font-semibold text-white" : "text-path-h4 text-path-primary"}`}>Your purchase</h2>
+        <h2 className={`font-poppins ${isSidebar ? "text-path-p1 font-semibold text-white" : "text-path-h4 text-path-primary"}`}>{title}</h2>
         <p className={`mt-0.5 ${isSidebar ? "text-sm text-white/90" : "text-path-p2 text-path-grey-700"}`}>
           {productPackage.name}
           {productPackage.description && (

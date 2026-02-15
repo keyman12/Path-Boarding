@@ -5,6 +5,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_admin
@@ -63,7 +64,7 @@ def _ensure_upload_dir():
 @router.post("/login", response_model=TokenResponse)
 def admin_login(body: AdminLogin, db: Session = Depends(get_db)):
     """Path Admin login. Initial account: Admin / keywee50."""
-    admin = db.query(AdminUser).filter(AdminUser.username == body.username).first()
+    admin = db.query(AdminUser).filter(func.lower(AdminUser.username) == body.username.lower()).first()
     if not admin:
         raise HTTPException(status_code=401, detail="Invalid username or password")
     from app.core.security import verify_password
@@ -80,7 +81,7 @@ def create_admin_user(
     admin: AdminUser = Depends(get_current_admin),
 ):
     """Create a new Path Admin account."""
-    existing = db.query(AdminUser).filter(AdminUser.username == body.username).first()
+    existing = db.query(AdminUser).filter(func.lower(AdminUser.username) == body.username.lower()).first()
     if existing:
         raise HTTPException(status_code=400, detail="Username already exists")
     new_admin = AdminUser(

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -90,6 +91,7 @@ def get_saved_data(
         "address_town": contact.address_town,
         "phone_country_code": contact.phone_country_code,
         "phone_number": contact.phone_number,
+        "sumsub_verification_status": getattr(contact, "sumsub_verification_status", None),
         # Step 5 business details
         "vat_number": getattr(contact, "vat_number", None),
         "customer_industry": getattr(contact, "customer_industry", None),
@@ -378,6 +380,22 @@ def submit_step2(
         raise HTTPException(status_code=400, detail="Complete step 1 first.")
     if not contact.email_verified_at:
         raise HTTPException(status_code=400, detail="Verify your email first.")
+    # If identity-critical fields changed and verification was completed, reset so user must re-verify
+    identity_critical_changed = (
+        getattr(contact, "sumsub_verification_status", None) == "completed"
+        and (
+            contact.legal_first_name != body.legal_first_name.strip()
+            or contact.legal_last_name != body.legal_last_name.strip()
+            or contact.date_of_birth != body.date_of_birth.strip()
+            or contact.address_country != body.address_country.strip()
+            or (contact.address_postcode or "") != (body.address_postcode or "").strip()
+            or contact.address_line1 != body.address_line1.strip()
+            or (contact.address_line2 or "") != (body.address_line2 or "").strip()
+            or contact.address_town != body.address_town.strip()
+        )
+    )
+    if identity_critical_changed:
+        contact.sumsub_verification_status = None
     contact.legal_first_name = body.legal_first_name.strip()
     contact.legal_last_name = body.legal_last_name.strip()
     contact.date_of_birth = body.date_of_birth.strip()
@@ -676,20 +694,27 @@ async def generate_sumsub_token(
             detail="Identity verification is not configured. Please contact support."
         )
     
-    # Generate SumSub access token using boarding_event_id as user_id
+    # When re-verifying (identity changed, status was reset), use a new userId so SumSub
+    # creates a fresh applicant instead of returning the previous verification result.
+    is_reverification = (
+        contact.sumsub_applicant_id is not None
+        and contact.sumsub_verification_status is None
+    )
+    sumsub_user_id = f"{event.id}-rev-{int(datetime.now(timezone.utc).timestamp() * 1000)}" if is_reverification else event.id
+
     try:
-        logger.info(f"Generating SumSub token for user_id={event.id}, level={settings.SUMSUB_LEVEL_NAME}")
+        logger.info(f"Generating SumSub token for user_id={sumsub_user_id}, level={settings.SUMSUB_LEVEL_NAME}")
         result = await generate_access_token(
-            user_id=event.id,
+            user_id=sumsub_user_id,
             ttl_seconds=1200  # 20 minutes
         )
         
         # Store the applicant ID in the database
-        contact.sumsub_applicant_id = event.id
+        contact.sumsub_applicant_id = sumsub_user_id
         contact.sumsub_verification_status = "pending"
         db.commit()
         
-        logger.info(f"Successfully generated SumSub token for user_id={event.id}")
+        logger.info(f"Successfully generated SumSub token for user_id={sumsub_user_id}")
         return SumsubTokenResponse(
             token=result["token"],
             user_id=result["userId"]
@@ -755,7 +780,7 @@ def boarding_login(
     Returns the user's current step so the frontend can navigate them to where they left off.
     """
     # Find boarding contact by email
-    contact = db.query(BoardingContact).filter(BoardingContact.email == body.email).first()
+    contact = db.query(BoardingContact).filter(func.lower(BoardingContact.email) == body.email.lower()).first()
     if not contact:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     

@@ -3,6 +3,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_partner
@@ -22,7 +23,7 @@ class PartnerMeResponse(BaseModel):
 @router.post("/partner/register", response_model=PartnerResponse)
 def partner_register(data: PartnerCreate, db: Session = Depends(get_db)):
     """Register a new partner (ISV). Assigns the first available fee schedule (or Default)."""
-    existing = db.query(Partner).filter(Partner.email == data.email).first()
+    existing = db.query(Partner).filter(func.lower(Partner.email) == data.email.lower()).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -51,7 +52,7 @@ def partner_register(data: PartnerCreate, db: Session = Depends(get_db)):
 @router.post("/partner/login", response_model=TokenResponse)
 def partner_login(data: PartnerLogin, db: Session = Depends(get_db)):
     """Login as partner; returns JWT access token."""
-    partner = db.query(Partner).filter(Partner.email == data.email).first()
+    partner = db.query(Partner).filter(func.lower(Partner.email) == data.email.lower()).first()
     if not partner or not verify_password(data.password, partner.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

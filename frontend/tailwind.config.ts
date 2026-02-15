@@ -20,6 +20,7 @@ const config: Config = {
         // Greyscale
         "path-grey-900": "#1a1a1a",
         "path-grey-700": "#4a4a4a",
+        "path-grey-600": "#5c5c5c",
         "path-grey-500": "#737373",
         "path-grey-300": "#a3a3a3",
         "path-grey-100": "#f5f5f5",
