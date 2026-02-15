@@ -139,7 +139,7 @@ export default function BoardingEntryPage() {
   const [loading, setLoading] = useState(true);
   const [linkError, setLinkError] = useState<string | null>(null);
 
-  const [step, setStep] = useState<"form" | "verify" | "done" | "step2" | "step3" | "step4" | "step5">("form");
+  const [step, setStep] = useState<"form" | "verify" | "done" | "step2" | "step3" | "step4" | "step5" | "step6">("form");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -275,6 +275,19 @@ export default function BoardingEntryPage() {
   const [customerSupportEmailError, setCustomerSupportEmailError] = useState<string | null>(null);
   const [customerWebsitesError, setCustomerWebsitesError] = useState<string | null>(null);
 
+  // Bank details (step6)
+  const [accountName, setAccountName] = useState("");
+  const [bankCurrency, setBankCurrency] = useState("GBP");
+  const [bankCountry, setBankCountry] = useState("United Kingdom");
+  const [sortCode, setSortCode] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [iban, setIban] = useState("");
+  const [bankConfirmationChecked, setBankConfirmationChecked] = useState(false);
+  const [sortCodeError, setSortCodeError] = useState<string | null>(null);
+  const [accountNumberError, setAccountNumberError] = useState<string | null>(null);
+  const [ibanError, setIbanError] = useState<string | null>(null);
+  const [step6Submitting, setStep6Submitting] = useState(false);
+
   // Telephone: digits only, 10–15 digits (e.g. UK mobile 07943 490 548 = 11 digits)
   function validatePhoneNumber(value: string): string | null {
     const digits = value.replace(/\D/g, "");
@@ -354,6 +367,54 @@ export default function BoardingEntryPage() {
     }
     return null;
   }
+
+  // UK sort code: 6 digits, format as XX-XX-XX. Accepts 334455 or 33-44-55.
+  function formatSortCode(value: string): string {
+    const digits = value.replace(/\D/g, "").slice(0, 6);
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 4) return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+    return `${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4)}`;
+  }
+  function validateSortCode(value: string): string | null {
+    const digits = value.replace(/\D/g, "");
+    if (digits.length === 0) return "Enter your sort code (6 digits).";
+    if (digits.length !== 6) return "Sort code must be exactly 6 digits.";
+    return null;
+  }
+
+  // UK account number: 8 digits. Note: full UK validation is sort-code dependent (VocaLink Mod 10/11/DB1A1)
+  // and uses different weight tables per bank, so we only validate length to avoid rejecting valid accounts.
+  function validateAccountNumber(value: string): string | null {
+    const digits = value.replace(/\D/g, "");
+    if (digits.length === 0) return "Enter your account number (8 digits).";
+    if (digits.length !== 8) return "Account number must be exactly 8 digits.";
+    return null;
+  }
+
+  // IBAN for EUR / non-UK: 2 letters + 2 digits + 4–30 alphanumeric (ISO 13616)
+  const IBAN_REGEX = /^[A-Z]{2}[0-9]{2}[A-Z0-9]{4,30}$/;
+  function validateIban(value: string): string | null {
+    const normalised = value.replace(/\s/g, "").toUpperCase();
+    if (normalised.length === 0) return "Enter your IBAN.";
+    if (!IBAN_REGEX.test(normalised)) return "Enter a valid IBAN (e.g. GB82WEST12345698765432).";
+    return null;
+  }
+
+  const EUROPEAN_CURRENCIES: { code: string; name: string }[] = [
+    { code: "GBP", name: "British Pound" },
+    { code: "EUR", name: "Euro" },
+    { code: "SEK", name: "Swedish Krona" },
+    { code: "NOK", name: "Norwegian Krone" },
+    { code: "DKK", name: "Danish Krone" },
+    { code: "CHF", name: "Swiss Franc" },
+    { code: "PLN", name: "Polish Złoty" },
+    { code: "CZK", name: "Czech Koruna" },
+    { code: "HUF", name: "Hungarian Forint" },
+    { code: "RON", name: "Romanian Leu" },
+    { code: "BGN", name: "Bulgarian Lev" },
+    { code: "HRK", name: "Croatian Kuna" },
+    { code: "ISK", name: "Icelandic Króna" },
+  ];
 
   const EUROPEAN_COUNTRIES = [
     "United Kingdom", "Albania", "Andorra", "Austria", "Belarus", "Belgium", "Bosnia and Herzegovina",
@@ -502,6 +563,12 @@ export default function BoardingEntryPage() {
           customer_support_email?: string;
           customer_websites?: string;
           product_description?: string;
+          bank_account_name?: string;
+          bank_currency?: string;
+          bank_country?: string;
+          bank_sort_code?: string;
+          bank_account_number?: string;
+          bank_iban?: string;
         }>(`/boarding/saved-data?token=${encodeURIComponent(token)}`);
         if (cancelled) return;
         if (res.data?.has_data) {
@@ -565,6 +632,12 @@ export default function BoardingEntryPage() {
           if (res.data.customer_support_email != null) setCustomerSupportEmail(res.data.customer_support_email);
           if (res.data.customer_websites != null) setCustomerWebsites(res.data.customer_websites);
           if (res.data.product_description != null) setProductDescription(res.data.product_description);
+          if (res.data.bank_account_name != null) setAccountName(res.data.bank_account_name);
+          if (res.data.bank_currency != null) setBankCurrency(res.data.bank_currency);
+          if (res.data.bank_country != null) setBankCountry(res.data.bank_country);
+          if (res.data.bank_sort_code != null) setSortCode(formatSortCode(res.data.bank_sort_code));
+          if (res.data.bank_account_number != null) setAccountNumber(res.data.bank_account_number);
+          if (res.data.bank_iban != null) setIban(res.data.bank_iban);
           
           // Navigate to the correct step based on current_step
           if (res.data.email_verified && res.data.current_step) {
@@ -912,7 +985,7 @@ export default function BoardingEntryPage() {
   async function handleSaveForLater() {
     setSaveForLaterLoading(true);
     try {
-      const payload: { current_step: string; vat_number?: string; customer_industry?: string; estimated_monthly_card_volume?: string; average_transaction_value?: string; delivery_timeframe?: string; customer_support_email?: string; customer_websites?: string; product_description?: string } = {
+      const payload: { current_step: string; vat_number?: string; customer_industry?: string; estimated_monthly_card_volume?: string; average_transaction_value?: string; delivery_timeframe?: string; customer_support_email?: string; customer_websites?: string; product_description?: string; bank_account_name?: string; bank_currency?: string; bank_country?: string; bank_sort_code?: string; bank_account_number?: string; bank_iban?: string } = {
         current_step: step,
       };
       if (step === "step5") {
@@ -924,6 +997,14 @@ export default function BoardingEntryPage() {
         payload.customer_support_email = customerSupportEmail;
         payload.customer_websites = customerWebsites;
         payload.product_description = productDescription;
+      }
+      if (step === "step6") {
+        payload.bank_account_name = accountName;
+        payload.bank_currency = bankCurrency;
+        payload.bank_country = bankCountry;
+        payload.bank_sort_code = sortCode.replace(/\D/g, "") ? sortCode : undefined;
+        payload.bank_account_number = accountNumber.replace(/\D/g, "") ? accountNumber : undefined;
+        payload.bank_iban = iban ? iban.replace(/\s/g, "").toUpperCase() : undefined;
       }
       const res = await apiPost<{ sent: boolean; message: string }>(
         `/boarding/save-for-later?token=${encodeURIComponent(token)}`,
@@ -2648,7 +2729,7 @@ export default function BoardingEntryPage() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                // TODO: save and proceed to next step
+                setStep("step6");
               }}
               className="space-y-6 mb-8"
             >
@@ -2949,6 +3030,288 @@ export default function BoardingEntryPage() {
               )}
             </div>
           </div>
+        )}
+      </div>
+    );
+  }
+
+  const isUkBank = bankCurrency === "GBP" && bankCountry === "United Kingdom";
+  const sortCodeDigits = sortCode.replace(/\D/g, "");
+  const accountNumberDigits = accountNumber.replace(/\D/g, "");
+  const ibanNormalised = iban.replace(/\s/g, "").toUpperCase();
+  const step6Valid =
+    accountName.trim() &&
+    bankCurrency &&
+    bankCountry &&
+    (isUkBank
+      ? (sortCodeDigits.length === 6 && accountNumberDigits.length === 8 && !validateSortCode(sortCode) && !validateAccountNumber(accountNumber))
+      : (ibanNormalised.length > 0 && !validateIban(iban))) &&
+    bankConfirmationChecked;
+
+  async function handleStep6Continue() {
+    if (!step6Valid) return;
+    setSortCodeError(validateSortCode(sortCode));
+    setAccountNumberError(validateAccountNumber(accountNumber));
+    setIbanError(validateIban(iban));
+    if (isUkBank && (validateSortCode(sortCode) || validateAccountNumber(accountNumber))) return;
+    if (!isUkBank && validateIban(iban)) return;
+    setStep6Submitting(true);
+    try {
+      const res = await apiPost<{ saved: boolean }>(
+        `/boarding/step/6?token=${encodeURIComponent(token)}`,
+        {
+          bank_account_name: accountName.trim(),
+          bank_currency: bankCurrency,
+          bank_country: bankCountry,
+          bank_sort_code: isUkBank ? sortCodeDigits : undefined,
+          bank_account_number: isUkBank ? accountNumberDigits : undefined,
+          bank_iban: !isUkBank ? ibanNormalised : undefined,
+        }
+      );
+      if (res.error) {
+        alert(res.error);
+        setStep6Submitting(false);
+        return;
+      }
+      setStep("done");
+      setStep6Submitting(false);
+    } catch {
+      alert("Failed to save. Please try again.");
+      setStep6Submitting(false);
+    }
+  }
+
+  if (step === "step6") {
+    return (
+      <div className="flex min-h-screen">
+        <main className="flex-1 flex flex-col p-6 md:p-8 font-roboto bg-white text-path-grey-900">
+          <header className="flex items-center gap-4 mb-8">
+            <Image src="/logo-path.png" alt="Path" width={140} height={40} />
+          </header>
+          <div className="flex-1 max-w-md mx-auto w-full">
+            <nav className="flex items-center flex-wrap gap-1 text-path-p2 text-path-grey-600 mb-6" aria-label="Breadcrumb">
+              <button type="button" onClick={() => setStep("form")} className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer">
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0"><Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" /></span>
+                Account
+              </button>
+              <span className="mx-1 text-path-grey-400">/</span>
+              <button type="button" onClick={() => setStep("step2")} className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer">
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0"><Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" /></span>
+                Personal Details
+              </button>
+              <span className="mx-1 text-path-grey-400">/</span>
+              <button type="button" onClick={() => setStep("step3")} className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer">
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0"><Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" /></span>
+                Verify
+              </button>
+              <span className="mx-1 text-path-grey-400">/</span>
+              <button type="button" onClick={() => setStep("step4")} className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer">
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0"><Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" /></span>
+                Business
+              </button>
+              <span className="mx-1 text-path-grey-400">/</span>
+              <button type="button" onClick={() => setStep("step5")} className="flex items-center gap-1.5 text-path-grey-400 hover:text-path-primary transition-colors cursor-pointer">
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0"><Image src="/icons/completed-form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain scale-125 opacity-70" /></span>
+                Business Details
+              </button>
+              <span className="mx-1 text-path-grey-400">/</span>
+              <span className="flex items-center gap-1.5 font-medium text-path-primary">
+                <span className="inline-flex items-center justify-center w-5 h-5 shrink-0"><Image src="/icons/form.png" alt="" width={20} height={20} className="w-5 h-5 object-contain" /></span>
+                Bank Details
+              </span>
+            </nav>
+            <h1 className="text-path-h2 font-poppins text-path-primary mb-2">Add a bank account for payouts</h1>
+            <p className="text-path-p1 text-path-grey-700 mb-6">Your earnings will be deposited into this account.</p>
+
+            <div className="space-y-6 mb-8">
+              <div>
+                <label htmlFor="accountName" className="block text-path-p2 font-medium text-path-grey-700 mb-1">Account name</label>
+                <input
+                  id="accountName"
+                  type="text"
+                  value={accountName}
+                  onChange={(e) => setAccountName(e.target.value)}
+                  placeholder="Name the account is in"
+                  className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="bankCurrency" className="block text-path-p2 font-medium text-path-grey-700 mb-1">Currency</label>
+                <select
+                  id="bankCurrency"
+                  value={bankCurrency}
+                  onChange={(e) => setBankCurrency(e.target.value)}
+                  className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary bg-white h-11"
+                  style={{ minHeight: "2.75rem" }}
+                >
+                  {EUROPEAN_CURRENCIES.map((c) => (
+                    <option key={c.code} value={c.code}>{c.code} – {c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="bankCountry" className="block text-path-p2 font-medium text-path-grey-700 mb-1">Country of bank account</label>
+                <select
+                  id="bankCountry"
+                  value={bankCountry}
+                  onChange={(e) => setBankCountry(e.target.value)}
+                  className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary bg-white h-11"
+                  style={{ minHeight: "2.75rem" }}
+                >
+                  {EUROPEAN_COUNTRIES.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+
+              {isUkBank ? (
+                <>
+                  <div>
+                    <label htmlFor="sortCode" className="block text-path-p2 font-medium text-path-grey-700 mb-1">Sort code</label>
+                    <input
+                      id="sortCode"
+                      type="text"
+                      inputMode="numeric"
+                      value={sortCode}
+                      onChange={(e) => {
+                        const formatted = formatSortCode(e.target.value);
+                        setSortCode(formatted);
+                        setSortCodeError(null);
+                      }}
+                      onBlur={() => setSortCodeError(validateSortCode(sortCode))}
+                      placeholder="e.g. 33-44-55"
+                      maxLength={8}
+                      className={`w-full px-3 py-2 border rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary ${sortCodeError ? "border-path-secondary" : "border-path-grey-300"}`}
+                    />
+                    {sortCodeError && <p className="mt-1 text-path-p2 text-path-secondary">{sortCodeError}</p>}
+                  </div>
+
+                  <div>
+                    <label htmlFor="accountNumber" className="block text-path-p2 font-medium text-path-grey-700 mb-1">Account number</label>
+                    <input
+                      id="accountNumber"
+                      type="text"
+                      inputMode="numeric"
+                      value={accountNumber}
+                      onChange={(e) => {
+                        const digits = e.target.value.replace(/\D/g, "").slice(0, 8);
+                        setAccountNumber(digits);
+                        setAccountNumberError(null);
+                      }}
+                      onBlur={() => setAccountNumberError(validateAccountNumber(accountNumber))}
+                      placeholder="8 digits"
+                      maxLength={8}
+                      className={`w-full px-3 py-2 border rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary ${accountNumberError ? "border-path-secondary" : "border-path-grey-300"}`}
+                    />
+                    {accountNumberError && <p className="mt-1 text-path-p2 text-path-secondary">{accountNumberError}</p>}
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <label htmlFor="iban" className="block text-path-p2 font-medium text-path-grey-700 mb-1">IBAN</label>
+                  <input
+                    id="iban"
+                    type="text"
+                    value={iban}
+                    onChange={(e) => {
+                      setIban(e.target.value.toUpperCase());
+                      setIbanError(null);
+                    }}
+                    onBlur={() => setIbanError(validateIban(iban))}
+                    placeholder="e.g. DE89370400440532013000"
+                    className={`w-full px-3 py-2 border rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary ${ibanError ? "border-path-secondary" : "border-path-grey-300"}`}
+                  />
+                  {ibanError && <p className="mt-1 text-path-p2 text-path-secondary">{ibanError}</p>}
+                </div>
+              )}
+
+              <div className="pt-4">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={bankConfirmationChecked}
+                    onChange={(e) => setBankConfirmationChecked(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-path-grey-300 text-path-primary focus:ring-path-primary"
+                  />
+                  <span className="text-path-p2 text-path-grey-700">
+                    I confirm that I am the account holder and the only person required to authorise debits from this bank account. By submitting these details, I authorise Path to make transfers to and from this account via the Bankers&apos; Automated Clearing Services (Bacs), in accordance with the Bacs Direct Debit Guarantee. I confirm that I have read and agree to the{" "}
+                    <Link href="/legal/services-agreement" className="text-path-primary font-medium underline hover:no-underline" target="_blank" rel="noopener noreferrer">
+                      Services Agreement
+                    </Link>
+                    , including the Bacs Direct Debit Instruction.
+                  </span>
+                </label>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleStep6Continue}
+                disabled={!step6Valid || step6Submitting}
+                className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
+                  step6Valid && !step6Submitting ? "bg-path-primary text-white hover:bg-path-primary-light-1" : "bg-path-grey-200 text-path-grey-500 cursor-not-allowed"
+                }`}
+              >
+                {step6Submitting ? "Saving..." : "Continue"}
+              </button>
+            </div>
+          </div>
+          <footer className="mt-12 pt-6 border-t border-path-grey-200 text-path-p2 text-path-grey-500 text-center">
+            © 2026 Path2ai.tech
+          </footer>
+        </main>
+        {inviteInfo && (
+          <BoardingRightPanel
+            partner={inviteInfo.partner}
+            onBack={{ label: "Business Details", onClick: () => setStep("step5") }}
+            onSaveForLater={() => setShowSaveForLaterModal(true)}
+          />
+        )}
+        {showSaveForLaterModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full">
+              {!saveForLaterSuccess ? (
+                <>
+                  <h2 className="text-path-h3 font-poppins text-path-primary mb-4">Save for later</h2>
+                  <p className="text-path-p1 text-path-grey-700 mb-4">Your progress has been saved and is available for the next 14 days for you to return and complete.</p>
+                  <p className="text-path-p1 text-path-grey-700 mb-6">We&apos;ll send an email to your email address with a link that will take you to the merchant boarding login screen.</p>
+                  <div className="flex gap-3">
+                    <button onClick={() => setShowSaveForLaterModal(false)} className="flex-1 px-4 py-2 border border-path-grey-300 rounded-lg text-path-grey-700 hover:bg-path-grey-100 transition-colors">Cancel</button>
+                    <button onClick={handleSaveForLater} disabled={saveForLaterLoading} className="flex-1 px-4 py-2 bg-path-primary text-white rounded-lg hover:bg-path-primary-light-1 transition-colors disabled:opacity-50">{saveForLaterLoading ? "Sending..." : "Continue"}</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-path-h3 font-poppins text-path-primary mb-4">Email sent!</h2>
+                  <p className="text-path-p1 text-path-grey-700 mb-6">We&apos;ve sent a link to your email address. You can use it to return and complete your boarding anytime within the next 14 days.</p>
+                  <button onClick={() => { setShowSaveForLaterModal(false); setSaveForLaterSuccess(false); router.push("/"); }} className="w-full px-4 py-2 bg-path-primary text-white rounded-lg hover:bg-path-primary-light-1 transition-colors">Close</button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (step === "done") {
+    return (
+      <div className="flex min-h-screen">
+        <main className="flex-1 flex flex-col p-6 md:p-8 font-roboto bg-white text-path-grey-900">
+          <header className="flex items-center gap-4 mb-8">
+            <Image src="/logo-path.png" alt="Path" width={140} height={40} />
+          </header>
+          <div className="flex-1 max-w-md mx-auto w-full flex flex-col items-center justify-center text-center">
+            <h1 className="text-path-h2 font-poppins text-path-primary mb-4">Bank details saved</h1>
+            <p className="text-path-p1 text-path-grey-700 mb-8">
+              Your bank account has been added. Your earnings will be deposited into this account.
+            </p>
+            <Link href="/" className="text-path-primary hover:underline font-medium">Return home</Link>
+          </div>
+        </main>
+        {inviteInfo && (
+          <BoardingRightPanel partner={inviteInfo.partner} />
         )}
       </div>
     );

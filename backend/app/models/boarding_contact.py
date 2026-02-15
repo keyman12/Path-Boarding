@@ -42,5 +42,12 @@ class BoardingContact(Base):
     customer_support_email = Column(String(255), nullable=True)
     customer_websites = Column(String(1024), nullable=True)
     product_description = Column(String(4096), nullable=True)
+    # Step 6 bank details
+    bank_account_name = Column(String(255), nullable=True)
+    bank_currency = Column(String(8), nullable=True)
+    bank_country = Column(String(64), nullable=True)
+    bank_sort_code = Column(String(16), nullable=True)
+    bank_account_number = Column(String(16), nullable=True)
+    bank_iban = Column(String(34), nullable=True)
 
     boarding_event = relationship("BoardingEvent", back_populates="contact")

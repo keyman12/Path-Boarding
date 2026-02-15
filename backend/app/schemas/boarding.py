@@ -104,8 +104,21 @@ class SumsubTokenResponse(BaseModel):
     user_id: str
 
 
+class Step6Submit(BaseModel):
+    bank_account_name: str
+    bank_currency: str
+    bank_country: str
+    bank_sort_code: Optional[str] = None  # UK only (GBP + UK)
+    bank_account_number: Optional[str] = None  # UK only (GBP + UK)
+    bank_iban: Optional[str] = None  # EUR / non-UK
+
+
+class Step6Response(BaseModel):
+    saved: bool = True
+
+
 class SaveForLaterSubmit(BaseModel):
-    current_step: Optional[str] = None  # form, verify, step2, step3, step4, step5
+    current_step: Optional[str] = None  # form, verify, step2, step3, step4, step5, step6
     # Step 5 business details (optional, for step5)
     vat_number: Optional[str] = None
     customer_industry: Optional[str] = None
@@ -115,3 +128,10 @@ class SaveForLaterSubmit(BaseModel):
     customer_support_email: Optional[str] = None
     customer_websites: Optional[str] = None
     product_description: Optional[str] = None
+    # Step 6 bank details (optional, for step6)
+    bank_account_name: Optional[str] = None
+    bank_currency: Optional[str] = None
+    bank_country: Optional[str] = None
+    bank_sort_code: Optional[str] = None
+    bank_account_number: Optional[str] = None
+    bank_iban: Optional[str] = None

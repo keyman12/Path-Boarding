@@ -28,6 +28,8 @@ from app.schemas.boarding import (
     Step1Response,
     Step2Submit,
     Step2Response,
+    Step6Submit,
+    Step6Response,
     SumsubTokenResponse,
     VerifyEmailCodeSubmit,
     VerifyEmailResponse,
@@ -97,6 +99,13 @@ def get_saved_data(
         "customer_support_email": getattr(contact, "customer_support_email", None),
         "customer_websites": getattr(contact, "customer_websites", None),
         "product_description": getattr(contact, "product_description", None),
+        # Step 6 bank details
+        "bank_account_name": getattr(contact, "bank_account_name", None),
+        "bank_currency": getattr(contact, "bank_currency", None),
+        "bank_country": getattr(contact, "bank_country", None),
+        "bank_sort_code": getattr(contact, "bank_sort_code", None),
+        "bank_account_number": getattr(contact, "bank_account_number", None),
+        "bank_iban": getattr(contact, "bank_iban", None),
     }
 
 
@@ -388,6 +397,35 @@ def submit_step2(
     return Step2Response()
 
 
+@router.post("/step/6", response_model=Step6Response)
+def submit_step6(
+    token: str = Query(..., description="Invite token"),
+    body: Step6Submit = ...,
+    db: Session = Depends(get_db),
+):
+    """
+    Public: persist step 6 bank details. Requires completed step 5.
+    """
+    invite = db.query(Invite).filter(Invite.token == token).first()
+    if not invite or invite.used_at or (invite.expires_at and invite.expires_at < datetime.now(timezone.utc)):
+        raise HTTPException(status_code=404, detail="Invalid or expired link")
+    event = db.query(BoardingEvent).filter(BoardingEvent.id == invite.boarding_event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Invalid link")
+    contact = db.query(BoardingContact).filter(BoardingContact.boarding_event_id == event.id).first()
+    if not contact:
+        raise HTTPException(status_code=400, detail="Complete previous steps first.")
+    contact.bank_account_name = body.bank_account_name.strip()
+    contact.bank_currency = body.bank_currency.strip()
+    contact.bank_country = body.bank_country.strip()
+    contact.bank_sort_code = (body.bank_sort_code or "").strip() or None
+    contact.bank_account_number = (body.bank_account_number or "").strip() or None
+    contact.bank_iban = (body.bank_iban or "").strip() or None
+    contact.current_step = "step6"
+    db.commit()
+    return Step6Response()
+
+
 @router.post("/test-clear-email", response_model=TestClearEmailResponse)
 def test_clear_email(body: TestClearEmailSubmit, db: Session = Depends(get_db)):
     """
@@ -575,6 +613,18 @@ def save_for_later(
         contact.customer_websites = body.customer_websites
     if body.product_description is not None:
         contact.product_description = body.product_description
+    if body.bank_currency is not None:
+        contact.bank_currency = body.bank_currency
+    if body.bank_country is not None:
+        contact.bank_country = body.bank_country
+    if body.bank_sort_code is not None:
+        contact.bank_sort_code = body.bank_sort_code
+    if body.bank_account_number is not None:
+        contact.bank_account_number = body.bank_account_number
+    if body.bank_account_name is not None:
+        contact.bank_account_name = body.bank_account_name
+    if body.bank_iban is not None:
+        contact.bank_iban = body.bank_iban
     db.commit()
     
     # Get user's name for personalization
