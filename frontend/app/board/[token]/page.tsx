@@ -1,11 +1,16 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import SumsubWebSdk from "@sumsub/websdk-react";
 import { API_BASE, apiGet, apiPost } from "@/lib/api";
+
+const SumsubWebSdk = dynamic(
+  () => import("@sumsub/websdk-react").then((mod) => mod.default ?? mod),
+  { ssr: false, loading: () => <p className="text-path-p2 text-path-grey-600">Loading verification...</p> }
+);
 import { PurchasedProductsSummary } from "@/components/PurchasedProductsSummary";
 
 type MccItem = { mcc: string; label: string };
@@ -33,7 +38,7 @@ type ProductPackageDisplay = {
 };
 
 type InviteInfo = {
-  partner: { name: string; logo_url?: string | null };
+  partner: { name: string; logo_url?: string | null; merchant_support_email?: string | null; merchant_support_phone?: string | null };
   merchant_name?: string | null;
   boarding_event_id: string;
   valid: boolean;
@@ -45,13 +50,15 @@ function BoardingRightPanel({
   onBack,
   onSaveForLater,
   productPackage,
-  productSummaryTitle
+  productSummaryTitle,
+  showSupportInfo = false
 }: { 
-  partner: { name: string; logo_url?: string | null };
+  partner: { name: string; logo_url?: string | null; merchant_support_email?: string | null; merchant_support_phone?: string | null };
   onBack?: { label: string; onClick: () => void; isForward?: boolean };
   onSaveForLater?: () => void;
   productPackage?: ProductPackageDisplay | null;
   productSummaryTitle?: string;
+  showSupportInfo?: boolean;
 }) {
   const [logoError, setLogoError] = useState(false);
   const logoUrl = partner.logo_url
@@ -76,6 +83,23 @@ function BoardingRightPanel({
         <p className="text-xl font-poppins leading-snug">
           {partner.name} partners with Path for secure financial services.
         </p>
+        {showSupportInfo && (partner.merchant_support_email || partner.merchant_support_phone) && (
+          <div className="mt-4 space-y-2 text-path-p2 text-white/90">
+            {partner.merchant_support_email && (
+              <p>
+                Support Email:{" "}
+                <a href={`mailto:${partner.merchant_support_email}`} className="underline hover:text-white transition-colors">
+                  {partner.merchant_support_email}
+                </a>
+              </p>
+            )}
+            {partner.merchant_support_phone && (
+              <p>
+                Support Telephone Number: {partner.merchant_support_phone}
+              </p>
+            )}
+          </div>
+        )}
         {onBack && (
           <button
             onClick={onBack.onClick}
@@ -295,6 +319,7 @@ export default function BoardingEntryPage() {
   const [step6Submitting, setStep6Submitting] = useState(false);
   const [reviewAgreeChecked, setReviewAgreeChecked] = useState(false);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   // Telephone: digits only, 10–15 digits (e.g. UK mobile 07943 490 548 = 11 digits)
   function validatePhoneNumber(value: string): string | null {
@@ -3115,16 +3140,32 @@ export default function BoardingEntryPage() {
     if (!isUkBank && validateIban(iban)) return;
     setStep6Submitting(true);
     try {
+      const companyName = selectedCompany?.name ?? (businessType === "sole_trader" ? "Sole Trader" : "");
+      const payload: Record<string, unknown> = {
+        bank_account_name: accountName.trim(),
+        bank_currency: bankCurrency,
+        bank_country: bankCountry,
+        bank_sort_code: isUkBank ? sortCodeDigits : undefined,
+        bank_account_number: isUkBank ? accountNumberDigits : undefined,
+        bank_iban: !isUkBank ? ibanNormalised : undefined,
+        vat_number: vatNumber.trim() || undefined,
+        customer_industry: customerIndustry || undefined,
+        estimated_monthly_card_volume: estimatedMonthlyCardVolume.trim() || undefined,
+        average_transaction_value: averageTransactionValue.trim() || undefined,
+        delivery_timeframe: deliveryTimeframe || undefined,
+        customer_support_email: customerSupportEmail.trim() || undefined,
+        customer_websites: customerWebsites.trim() || undefined,
+        product_description: productDescription.trim() || undefined,
+        company_name: companyName || undefined,
+        company_number: selectedCompany?.number || undefined,
+        company_registered_office: selectedCompany?.fullAddress || undefined,
+        company_incorporated_in: selectedCompany ? "United Kingdom" : undefined,
+        company_incorporation_date: selectedCompany?.incorporated || undefined,
+        company_industry_sic: selectedCompany?.industry || undefined,
+      };
       const res = await apiPost<{ saved: boolean }>(
         `/boarding/step/6?token=${encodeURIComponent(token)}`,
-        {
-          bank_account_name: accountName.trim(),
-          bank_currency: bankCurrency,
-          bank_country: bankCountry,
-          bank_sort_code: isUkBank ? sortCodeDigits : undefined,
-          bank_account_number: isUkBank ? accountNumberDigits : undefined,
-          bank_iban: !isUkBank ? ibanNormalised : undefined,
-        }
+        payload
       );
       if (res.error) {
         alert(res.error);
@@ -3573,10 +3614,23 @@ export default function BoardingEntryPage() {
 
             <button
               type="button"
-              onClick={() => {
+              onClick={async () => {
                 if (!reviewAgreeChecked) return;
                 setReviewSubmitting(true);
-                setStep("done");
+                try {
+                  const res = await apiPost<{ success: boolean; agreement_pdf_path?: string }>(
+                    `/boarding/submit-review?token=${encodeURIComponent(token ?? "")}`,
+                    {}
+                  );
+                  if (res.error) {
+                    alert(res.error);
+                    setReviewSubmitting(false);
+                    return;
+                  }
+                  setStep("done");
+                } catch {
+                  alert("Failed to submit. Please try again.");
+                }
                 setReviewSubmitting(false);
               }}
               disabled={!reviewAgreeChecked || reviewSubmitting}
@@ -3627,22 +3681,71 @@ export default function BoardingEntryPage() {
   }
 
   if (step === "done") {
+    const pdfUrl = `${API_BASE || ""}/boarding/agreement-pdf?token=${encodeURIComponent(token ?? "")}`;
+    const servicesUrl = `${API_BASE || ""}/boarding/services-agreement`;
     return (
       <div className="flex min-h-screen">
         <main className="flex-1 flex flex-col p-6 md:p-8 font-roboto bg-white text-path-grey-900">
           <header className="flex items-center gap-4 mb-8">
             <Image src="/logo-path.png" alt="Path" width={140} height={40} />
           </header>
-          <div className="flex-1 max-w-md mx-auto w-full flex flex-col items-center justify-center text-center">
-            <h1 className="text-path-h2 font-poppins text-path-primary mb-4">Bank details saved</h1>
+          <div className="flex-1 max-w-md mx-auto w-full flex flex-col">
+            <h1 className="text-path-h2 font-poppins text-path-primary mb-2">Your Merchant Agreement Documents</h1>
             <p className="text-path-p1 text-path-grey-700 mb-8">
-              Your bank account has been added. Your earnings will be deposited into this account.
+              Below is a set of documents relating to your merchant agreement with Path. You can download each agreement as a PDF by clicking the relevant button.
             </p>
-            <Link href="/" className="text-path-primary hover:underline font-medium">Return home</Link>
+            <div className="space-y-4 mb-8">
+              <a
+                href={pdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-4 p-4 rounded-lg border border-path-grey-200 hover:border-path-primary hover:bg-path-primary/5 transition-colors group"
+              >
+                <div className="w-12 h-12 rounded-lg bg-path-primary/10 flex items-center justify-center shrink-0 group-hover:bg-path-primary/20">
+                  <svg className="w-6 h-6 text-path-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="font-medium text-path-grey-900">Path Merchant Agreement</p>
+                  <p className="text-path-p2 text-path-grey-600">Summary of your application and agreement terms</p>
+                </div>
+                <span className="text-path-primary font-medium shrink-0">Download PDF</span>
+              </a>
+              <a
+                href={servicesUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-4 p-4 rounded-lg border border-path-grey-200 hover:border-path-primary hover:bg-path-primary/5 transition-colors group"
+              >
+                <div className="w-12 h-12 rounded-lg bg-path-primary/10 flex items-center justify-center shrink-0 group-hover:bg-path-primary/20">
+                  <svg className="w-6 h-6 text-path-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="font-medium text-path-grey-900">Services Agreement</p>
+                  <p className="text-path-p2 text-path-grey-600">Path terms and conditions</p>
+                </div>
+                <span className="text-path-primary font-medium shrink-0">Download PDF</span>
+              </a>
+            </div>
+            {inviteInfo?.partner && (
+              <p className="text-path-p1 text-path-grey-700 mb-8">
+                If you require any additional services or assistance, please contact your software partner, {inviteInfo.partner.name}, using the support email address or telephone number provided.
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => { localStorage.removeItem("boarding_token"); localStorage.removeItem("boarding_event_id"); router.push("/"); }}
+              className="text-path-primary hover:underline font-medium"
+            >
+              Log out
+            </button>
           </div>
         </main>
         {inviteInfo && (
-          <BoardingRightPanel partner={inviteInfo.partner} />
+          <BoardingRightPanel partner={inviteInfo.partner} showSupportInfo />
         )}
       </div>
     );
@@ -3679,7 +3782,7 @@ export default function BoardingEntryPage() {
           </span>
         </nav>
         <h1 className="text-path-h2 font-poppins text-path-primary mb-2">Let&apos;s get started</h1>
-        {inviteInfo.merchant_name ? (
+        {inviteInfo?.merchant_name ? (
           <p className="text-path-p1 text-path-grey-700 mb-6">
             Welcome, <strong>{inviteInfo.merchant_name}</strong>. Create your account to continue.
           </p>

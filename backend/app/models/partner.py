@@ -13,6 +13,8 @@ class Partner(Base):
     external_id = Column(String(255), unique=True, index=True, nullable=True)
     email = Column(String(255), unique=True, index=True, nullable=False)
     logo_url = Column(String(512), nullable=True)
+    merchant_support_email = Column(String(255), nullable=True)
+    merchant_support_phone = Column(String(64), nullable=True)
     hashed_password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     fee_schedule_id = Column(String(36), ForeignKey("fee_schedules.id", ondelete="RESTRICT"), nullable=False, index=True)

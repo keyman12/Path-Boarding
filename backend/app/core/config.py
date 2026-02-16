@@ -48,6 +48,8 @@ class Settings(BaseSettings):
 
     # Uploads (ISV logos) – path on disk; served at /uploads/
     UPLOAD_DIR: str = "uploads"
+    # Services Agreement (static PDF) – path relative to app dir; filename must match file in folder
+    SERVICES_AGREEMENT_PATH: str = "static/Services Agreement.pdf"
     LOGO_MAX_SIZE_BYTES: int = 512 * 1024  # 512KB for welcome screen
 
     # Email (verification link) – from Path2ai.tech; set in .env for production

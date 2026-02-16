@@ -4,8 +4,11 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from pathlib import Path as PathLib
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -31,6 +34,7 @@ from app.schemas.boarding import (
     Step2Response,
     Step6Submit,
     Step6Response,
+    SubmitReviewResponse,
     SumsubTokenResponse,
     VerifyEmailCodeSubmit,
     VerifyEmailResponse,
@@ -108,6 +112,13 @@ def get_saved_data(
         "bank_sort_code": getattr(contact, "bank_sort_code", None),
         "bank_account_number": getattr(contact, "bank_account_number", None),
         "bank_iban": getattr(contact, "bank_iban", None),
+        # Company (step4)
+        "company_name": getattr(contact, "company_name", None),
+        "company_number": getattr(contact, "company_number", None),
+        "company_registered_office": getattr(contact, "company_registered_office", None),
+        "company_incorporated_in": getattr(contact, "company_incorporated_in", None),
+        "company_incorporation_date": getattr(contact, "company_incorporation_date", None),
+        "company_industry_sic": getattr(contact, "company_industry_sic", None),
     }
 
 
@@ -125,12 +136,13 @@ def get_invite_info(
         raise HTTPException(status_code=404, detail="Invalid or expired link")
     if invite.used_at:
         raise HTTPException(status_code=404, detail="Link already used")
-    if invite.expires_at and invite.expires_at < datetime.now(timezone.utc):
-        raise HTTPException(status_code=404, detail="Link expired")
 
     event = db.query(BoardingEvent).filter(BoardingEvent.id == invite.boarding_event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Invalid link")
+    # Allow completed boardings to access mini portal even if invite expired
+    if event.status != BoardingStatus.completed and invite.expires_at and invite.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=404, detail="Link expired")
     partner = invite.partner
     if not partner:
         raise HTTPException(status_code=404, detail="Invalid link")
@@ -185,7 +197,12 @@ def get_invite_info(
         )
 
     return InviteInfoResponse(
-        partner=InviteInfoPartner(name=partner.name, logo_url=partner.logo_url),
+        partner=InviteInfoPartner(
+            name=partner.name,
+            logo_url=partner.logo_url,
+            merchant_support_email=partner.merchant_support_email,
+            merchant_support_phone=partner.merchant_support_phone,
+        ),
         merchant_name=invite.merchant_name,
         boarding_event_id=event.id,
         valid=True,
@@ -439,6 +456,35 @@ def submit_step6(
     contact.bank_sort_code = (body.bank_sort_code or "").strip() or None
     contact.bank_account_number = (body.bank_account_number or "").strip() or None
     contact.bank_iban = (body.bank_iban or "").strip() or None
+    # Optional step5 and company data
+    if body.vat_number is not None:
+        contact.vat_number = (body.vat_number or "").strip() or None
+    if body.customer_industry is not None:
+        contact.customer_industry = (body.customer_industry or "").strip() or None
+    if body.estimated_monthly_card_volume is not None:
+        contact.estimated_monthly_card_volume = (body.estimated_monthly_card_volume or "").strip() or None
+    if body.average_transaction_value is not None:
+        contact.average_transaction_value = (body.average_transaction_value or "").strip() or None
+    if body.delivery_timeframe is not None:
+        contact.delivery_timeframe = (body.delivery_timeframe or "").strip() or None
+    if body.customer_support_email is not None:
+        contact.customer_support_email = (body.customer_support_email or "").strip() or None
+    if body.customer_websites is not None:
+        contact.customer_websites = (body.customer_websites or "").strip() or None
+    if body.product_description is not None:
+        contact.product_description = (body.product_description or "").strip() or None
+    if body.company_name is not None:
+        contact.company_name = (body.company_name or "").strip() or None
+    if body.company_number is not None:
+        contact.company_number = (body.company_number or "").strip() or None
+    if body.company_registered_office is not None:
+        contact.company_registered_office = (body.company_registered_office or "").strip() or None
+    if body.company_incorporated_in is not None:
+        contact.company_incorporated_in = (body.company_incorporated_in or "").strip() or None
+    if body.company_incorporation_date is not None:
+        contact.company_incorporation_date = (body.company_incorporation_date or "").strip() or None
+    if body.company_industry_sic is not None:
+        contact.company_industry_sic = (body.company_industry_sic or "").strip() or None
     contact.current_step = "step6"
     db.commit()
     return Step6Response()
@@ -643,6 +689,18 @@ def save_for_later(
         contact.bank_account_name = body.bank_account_name
     if body.bank_iban is not None:
         contact.bank_iban = body.bank_iban
+    if body.company_name is not None:
+        contact.company_name = body.company_name
+    if body.company_number is not None:
+        contact.company_number = body.company_number
+    if body.company_registered_office is not None:
+        contact.company_registered_office = body.company_registered_office
+    if body.company_incorporated_in is not None:
+        contact.company_incorporated_in = body.company_incorporated_in
+    if body.company_incorporation_date is not None:
+        contact.company_incorporation_date = body.company_incorporation_date
+    if body.company_industry_sic is not None:
+        contact.company_industry_sic = body.company_industry_sic
     db.commit()
     
     # Get user's name for personalization
@@ -768,6 +826,254 @@ async def complete_sumsub_verification(
         "status": status,
         "next_step": contact.current_step
     }
+
+
+@router.post("/submit-review", response_model=SubmitReviewResponse)
+def submit_review(
+    token: str = Query(..., description="Invite token"),
+    db: Session = Depends(get_db),
+):
+    """
+    Public: Generate agreement PDF, store against merchant, and complete boarding.
+    Requires completed step6 (bank details). Creates the PDF and saves path to merchant.
+    """
+    from app.services.agreement_pdf import generate_agreement_pdf
+    from app.models.fee_schedule import FeeSchedule
+
+    invite = db.query(Invite).filter(Invite.token == token).first()
+    if not invite or invite.used_at:
+        raise HTTPException(status_code=404, detail="Invalid or expired link")
+    event = db.query(BoardingEvent).filter(BoardingEvent.id == invite.boarding_event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Invalid link")
+    contact = db.query(BoardingContact).filter(BoardingContact.boarding_event_id == event.id).first()
+    if not contact:
+        raise HTTPException(status_code=400, detail="Complete previous steps first.")
+    if not event.merchant_id:
+        raise HTTPException(status_code=400, detail="Merchant not found. Please complete account setup.")
+    merchant = db.query(Merchant).filter(Merchant.id == event.merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=400, detail="Merchant not found.")
+
+    # Already completed – return existing agreement (merchant can access mini portal)
+    if event.status == BoardingStatus.completed and merchant.agreement_pdf_path:
+        return SubmitReviewResponse(success=True, agreement_pdf_path=merchant.agreement_pdf_path)
+
+    # Ensure agreements directory exists
+    upload_dir = PathLib(settings.UPLOAD_DIR)
+    agreements_dir = upload_dir / "agreements"
+    agreements_dir.mkdir(parents=True, exist_ok=True)
+    pdf_filename = f"agreement-{merchant.id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.pdf"
+    pdf_path = agreements_dir / pdf_filename
+
+    # Build product package with items (like invite-info)
+    product_package = None
+    if invite.product_package_id and invite.product_package:
+        pkg = invite.product_package
+        item_by_id = {it.id: it for it in pkg.items}
+        dd_by_item = {}
+        for dd in invite.device_details:
+            dd_by_item.setdefault(dd.package_item_id, []).append(dd)
+        items = []
+        for idx, dd in enumerate(invite.device_details):
+            it = item_by_id.get(dd.package_item_id)
+            if not it:
+                continue
+            cat = it.catalog_product
+            items.append({"catalog_product": cat, "config": it.config, "product_name": cat.name if cat else ""})
+        for it in pkg.items:
+            if it.id in dd_by_item:
+                continue
+            cat = it.catalog_product
+            items.append({"catalog_product": cat, "config": it.config, "product_name": cat.name if cat else ""})
+        product_package = type("ProductPackage", (), {"items": items})()
+
+    # Fee schedule from partner
+    fee_schedule = None
+    if invite.partner and invite.partner.fee_schedule_id:
+        fee_schedule = db.query(FeeSchedule).filter(FeeSchedule.id == invite.partner.fee_schedule_id).first()
+
+    try:
+        generate_agreement_pdf(
+            output_path=str(pdf_path),
+            contact=contact,
+            merchant=merchant,
+            invite=invite,
+            product_package=product_package,
+            fee_schedule=fee_schedule,
+        )
+    except Exception as e:
+        logger.exception("Failed to generate agreement PDF: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to generate agreement. Please try again.")
+
+    # Store relative path for portability
+    relative_path = f"agreements/{pdf_filename}"
+    merchant.agreement_pdf_path = relative_path
+    contact.current_step = "done"
+    event.status = BoardingStatus.completed
+    event.completed_at = datetime.now(timezone.utc)
+    db.commit()
+
+    # Send completion email with attachments
+    from app.services.email import send_completion_email
+
+    portal_url = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/board/{token}"
+    merchant_name = f"{(contact.legal_first_name or '').strip()} {(contact.legal_last_name or '').strip()}".strip() or (contact.email or "Merchant")
+    send_completion_email(
+        to_email=contact.email,
+        merchant_name=merchant_name,
+        portal_url=portal_url,
+        pdf_path=str(pdf_path),
+    )
+
+    return SubmitReviewResponse(success=True, agreement_pdf_path=relative_path)
+
+
+@router.post("/regenerate-agreement", response_model=SubmitReviewResponse)
+def regenerate_agreement(
+    token: str = Query(..., description="Invite token from boarding URL"),
+    db: Session = Depends(get_db),
+):
+    """
+    Regenerate the merchant agreement PDF from current data.
+    For testing/iteration on the PDF template. Works for any boarding with a merchant.
+    """
+    from app.services.agreement_pdf import generate_agreement_pdf
+    from app.models.fee_schedule import FeeSchedule
+
+    invite = db.query(Invite).filter(Invite.token == token).first()
+    if not invite or (invite.expires_at and invite.expires_at < datetime.now(timezone.utc)):
+        raise HTTPException(status_code=404, detail="Invalid or expired link")
+    event = db.query(BoardingEvent).filter(BoardingEvent.id == invite.boarding_event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Invalid link")
+    contact = db.query(BoardingContact).filter(BoardingContact.boarding_event_id == event.id).first()
+    if not contact:
+        raise HTTPException(status_code=400, detail="Complete previous steps first.")
+    if not event.merchant_id:
+        raise HTTPException(status_code=400, detail="Merchant not found. Please complete account setup.")
+    merchant = db.query(Merchant).filter(Merchant.id == event.merchant_id).first()
+    if not merchant:
+        raise HTTPException(status_code=400, detail="Merchant not found.")
+
+    upload_dir = PathLib(settings.UPLOAD_DIR)
+    agreements_dir = upload_dir / "agreements"
+    agreements_dir.mkdir(parents=True, exist_ok=True)
+    pdf_filename = f"agreement-{merchant.id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.pdf"
+    pdf_path = agreements_dir / pdf_filename
+
+    product_package = None
+    if invite.product_package_id and invite.product_package:
+        pkg = invite.product_package
+        item_by_id = {it.id: it for it in pkg.items}
+        dd_by_item = {}
+        for dd in invite.device_details:
+            dd_by_item.setdefault(dd.package_item_id, []).append(dd)
+        items = []
+        for idx, dd in enumerate(invite.device_details):
+            it = item_by_id.get(dd.package_item_id)
+            if not it:
+                continue
+            cat = it.catalog_product
+            items.append({"catalog_product": cat, "config": it.config, "product_name": cat.name if cat else ""})
+        for it in pkg.items:
+            if it.id in dd_by_item:
+                continue
+            cat = it.catalog_product
+            items.append({"catalog_product": cat, "config": it.config, "product_name": cat.name if cat else ""})
+        product_package = type("ProductPackage", (), {"items": items})()
+
+    fee_schedule = None
+    if invite.partner and invite.partner.fee_schedule_id:
+        fee_schedule = db.query(FeeSchedule).filter(FeeSchedule.id == invite.partner.fee_schedule_id).first()
+
+    try:
+        generate_agreement_pdf(
+            output_path=str(pdf_path),
+            contact=contact,
+            merchant=merchant,
+            invite=invite,
+            product_package=product_package,
+            fee_schedule=fee_schedule,
+        )
+    except Exception as e:
+        logger.exception("Failed to regenerate agreement PDF: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to regenerate agreement. Please try again.")
+
+    relative_path = f"agreements/{pdf_filename}"
+    merchant.agreement_pdf_path = relative_path
+    db.commit()
+
+    return SubmitReviewResponse(success=True, agreement_pdf_path=relative_path)
+
+
+@router.get("/blank-agreement-pdf")
+def get_blank_agreement_pdf():
+    """
+    Generate and download a blank merchant agreement PDF template.
+    Use for layout review - all values are placeholders (—).
+    No auth required; for local development/testing.
+    """
+    from app.services.agreement_pdf import generate_blank_agreement_pdf
+
+    upload_dir = PathLib(settings.UPLOAD_DIR)
+    agreements_dir = upload_dir / "agreements"
+    agreements_dir.mkdir(parents=True, exist_ok=True)
+    pdf_filename = f"Path-Merchant-Agreement-Blank-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.pdf"
+    pdf_path = agreements_dir / pdf_filename
+
+    generate_blank_agreement_pdf(output_path=str(pdf_path))
+
+    return FileResponse(
+        path=str(pdf_path),
+        media_type="application/pdf",
+        filename=pdf_filename,
+    )
+
+
+@router.get("/services-agreement")
+def get_services_agreement():
+    """
+    Download the Path Services Agreement (static document).
+    Same for all merchants; forms part of the full agreement with the Merchant Agreement PDF.
+    """
+    backend_root = PathLib(__file__).resolve().parent.parent.parent
+    services_path = backend_root / settings.SERVICES_AGREEMENT_PATH
+    if not services_path.exists():
+        raise HTTPException(status_code=404, detail="Services Agreement not found")
+    return FileResponse(
+        path=str(services_path),
+        media_type="application/pdf",
+        filename="Services-Agreement.pdf",
+    )
+
+
+@router.get("/agreement-pdf")
+def get_agreement_pdf(
+    token: str = Query(..., description="Invite token from boarding URL"),
+    db: Session = Depends(get_db),
+):
+    """
+    Public: Download the generated merchant agreement PDF.
+    Requires a valid invite token for a completed boarding.
+    """
+    invite = db.query(Invite).filter(Invite.token == token).first()
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invalid or expired link")
+    event = db.query(BoardingEvent).filter(BoardingEvent.id == invite.boarding_event_id).first()
+    if not event or not event.merchant_id:
+        raise HTTPException(status_code=404, detail="Agreement not found")
+    merchant = db.query(Merchant).filter(Merchant.id == event.merchant_id).first()
+    if not merchant or not merchant.agreement_pdf_path:
+        raise HTTPException(status_code=404, detail="Agreement PDF not yet generated. Complete the flow or use Regenerate.")
+    full_path = PathLib(settings.UPLOAD_DIR) / merchant.agreement_pdf_path
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail="Agreement file not found")
+    return FileResponse(
+        path=str(full_path),
+        media_type="application/pdf",
+        filename="Path-Merchant-Agreement.pdf",
+    )
 
 
 @router.post("/login", response_model=BoardingLoginResponse)

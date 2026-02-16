@@ -33,6 +33,13 @@ class BoardingContact(Base):
     # Step 3 identity verification (SumSub)
     sumsub_applicant_id = Column(String(255), nullable=True)  # SumSub applicant ID
     sumsub_verification_status = Column(String(50), nullable=True)  # pending, completed, rejected
+    # Step 4 company (from Companies House selection)
+    company_name = Column(String(255), nullable=True)
+    company_number = Column(String(32), nullable=True)
+    company_registered_office = Column(String(512), nullable=True)
+    company_incorporated_in = Column(String(64), nullable=True)
+    company_incorporation_date = Column(String(32), nullable=True)
+    company_industry_sic = Column(String(255), nullable=True)
     # Step 5 business details
     vat_number = Column(String(32), nullable=True)
     customer_industry = Column(String(32), nullable=True)

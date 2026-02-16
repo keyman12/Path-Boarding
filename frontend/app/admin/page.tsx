@@ -10,7 +10,7 @@ import { ProductPackageWizard, type CatalogProduct, type WizardItem } from "@/co
 const ADMIN_TOKEN_KEY = "path_admin_token";
 
 type AdminUser = { id: string; username: string; created_at: string };
-type Partner = { id: string; name: string; email: string; external_id?: string | null; logo_url?: string | null; is_active: boolean; fee_schedule_id: string; created_at: string };
+type Partner = { id: string; name: string; email: string; external_id?: string | null; logo_url?: string | null; merchant_support_email?: string | null; merchant_support_phone?: string | null; is_active: boolean; fee_schedule_id: string; created_at: string };
 type FeeSchedule = { id: string; name: string; rates: Record<string, Record<string, number>> };
 
 type PackageItem = { id: string; catalog_product_id: string; product_code?: string; product_name?: string; product_type?: string; config?: Record<string, unknown>; sort_order: number; requires_store_epos: boolean };
@@ -50,12 +50,16 @@ export default function AdminPage() {
   const [isvPasswordConfirm, setIsvPasswordConfirm] = useState("");
   const [isvExternalId, setIsvExternalId] = useState("");
   const [isvFeeScheduleId, setIsvFeeScheduleId] = useState("");
+  const [isvMerchantSupportEmail, setIsvMerchantSupportEmail] = useState("");
+  const [isvMerchantSupportPhone, setIsvMerchantSupportPhone] = useState("");
   const [isvLogoFile, setIsvLogoFile] = useState<File | null>(null);
   const [partnerPasswordNew, setPartnerPasswordNew] = useState("");
   const [partnerPasswordNewConfirm, setPartnerPasswordNewConfirm] = useState("");
   const [partnerNameEdit, setPartnerNameEdit] = useState("");
   const [partnerEmailEdit, setPartnerEmailEdit] = useState("");
   const [partnerFeeScheduleIdEdit, setPartnerFeeScheduleIdEdit] = useState("");
+  const [partnerMerchantSupportEmailEdit, setPartnerMerchantSupportEmailEdit] = useState("");
+  const [partnerMerchantSupportPhoneEdit, setPartnerMerchantSupportPhoneEdit] = useState("");
   const [partnerLogoFile, setPartnerLogoFile] = useState<File | null>(null);
   const [createAdminMessage, setCreateAdminMessage] = useState<string | null>(null);
   const [createAdminError, setCreateAdminError] = useState<string | null>(null);
@@ -192,6 +196,8 @@ export default function AdminPage() {
     formData.append("email", isvEmail);
     formData.append("password", isvPassword);
     formData.append("fee_schedule_id", isvFeeScheduleId);
+    formData.append("merchant_support_email", isvMerchantSupportEmail);
+    formData.append("merchant_support_phone", isvMerchantSupportPhone);
     if (isvExternalId) formData.append("external_id", isvExternalId);
     if (isvLogoFile) formData.append("logo", isvLogoFile);
     const res = await fetch(`${API_BASE}/admin/partners`, {
@@ -212,6 +218,8 @@ export default function AdminPage() {
     setIsvPasswordConfirm("");
     setIsvExternalId("");
     setIsvFeeScheduleId("");
+    setIsvMerchantSupportEmail("");
+    setIsvMerchantSupportPhone("");
     setIsvLogoFile(null);
     loadPartners();
   }
@@ -227,11 +235,13 @@ export default function AdminPage() {
         return;
       }
     }
-    const body: { name?: string; email?: string; password?: string; fee_schedule_id?: string } = {};
+    const body: { name?: string; email?: string; password?: string; fee_schedule_id?: string; merchant_support_email?: string; merchant_support_phone?: string } = {};
     if (partnerNameEdit) body.name = partnerNameEdit;
     if (partnerEmailEdit) body.email = partnerEmailEdit;
     if (partnerPasswordNew) body.password = partnerPasswordNew;
     if (partnerFeeScheduleIdEdit) body.fee_schedule_id = partnerFeeScheduleIdEdit;
+    if (partnerMerchantSupportEmailEdit !== undefined) body.merchant_support_email = partnerMerchantSupportEmailEdit;
+    if (partnerMerchantSupportPhoneEdit !== undefined) body.merchant_support_phone = partnerMerchantSupportPhoneEdit;
     if (Object.keys(body).length === 0) {
       setUpdatePartnerError("Enter at least one field to update.");
       return;
@@ -247,6 +257,8 @@ export default function AdminPage() {
     setPartnerPasswordNewConfirm("");
     setPartnerNameEdit("");
     setPartnerEmailEdit("");
+    setPartnerMerchantSupportEmailEdit("");
+    setPartnerMerchantSupportPhoneEdit("");
     setSelectedPartnerId("");
     loadPartners();
   }
@@ -505,6 +517,8 @@ export default function AdminPage() {
               {feeSchedules.length === 0 && <p className="text-path-p2 text-path-grey-500 mt-1">Create a fee schedule first.</p>}
             </div>
             <input type="text" value={isvExternalId} onChange={(e) => setIsvExternalId(e.target.value)} placeholder="External ID (optional)" className={inputClass} />
+            <input type="email" value={isvMerchantSupportEmail} onChange={(e) => setIsvMerchantSupportEmail(e.target.value)} placeholder="Merchant Support Email Address (required)" required className={inputClass} />
+            <input type="tel" value={isvMerchantSupportPhone} onChange={(e) => setIsvMerchantSupportPhone(e.target.value)} placeholder="Merchant Support Telephone Number (required)" required className={inputClass} />
             <div>
               <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Logo (optional, max 512KB)</label>
               <input type="file" accept=".png,.jpg,.jpeg,.svg,.webp" onChange={(e) => setIsvLogoFile(e.target.files?.[0] ?? null)} className="w-full text-path-p2" />
@@ -521,7 +535,7 @@ export default function AdminPage() {
           {updatePartnerError && <p className="text-path-p2 text-path-secondary mb-2">{updatePartnerError}</p>}
           <form onSubmit={handleUpdatePartner} className="space-y-3 max-w-md">
             <div className="relative h-11">
-              <select value={selectedPartnerId} onChange={(e) => { setSelectedPartnerId(e.target.value); const p = partners.find(x => x.id === e.target.value); if (p) { setPartnerNameEdit(p.name); setPartnerEmailEdit(p.email); setPartnerFeeScheduleIdEdit(p.fee_schedule_id); } setPartnerLogoFile(null); }} className={selectClass}>
+              <select value={selectedPartnerId} onChange={(e) => { setSelectedPartnerId(e.target.value); const p = partners.find(x => x.id === e.target.value); if (p) { setPartnerNameEdit(p.name); setPartnerEmailEdit(p.email); setPartnerFeeScheduleIdEdit(p.fee_schedule_id); setPartnerMerchantSupportEmailEdit(p.merchant_support_email ?? ""); setPartnerMerchantSupportPhoneEdit(p.merchant_support_phone ?? ""); } setPartnerLogoFile(null); }} className={selectClass}>
                 <option value="">Select partner</option>
                 {partners.map((p) => (
                   <option key={p.id} value={p.id}>{p.name} ({p.email})</option>
@@ -553,6 +567,8 @@ export default function AdminPage() {
                 </div>
                 <input type="text" value={partnerNameEdit} onChange={(e) => setPartnerNameEdit(e.target.value)} placeholder="Name" className={inputClass} />
                 <input type="email" value={partnerEmailEdit} onChange={(e) => setPartnerEmailEdit(e.target.value)} placeholder="Email" className={inputClass} />
+                <input type="email" value={partnerMerchantSupportEmailEdit} onChange={(e) => setPartnerMerchantSupportEmailEdit(e.target.value)} placeholder="Merchant Support Email Address" className={inputClass} />
+                <input type="tel" value={partnerMerchantSupportPhoneEdit} onChange={(e) => setPartnerMerchantSupportPhoneEdit(e.target.value)} placeholder="Merchant Support Telephone Number" className={inputClass} />
                 <div>
                   <label className="block text-path-p2 font-medium text-path-grey-700 mb-1">Fee schedule</label>
                   <div className="relative h-11">

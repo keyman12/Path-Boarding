@@ -36,6 +36,8 @@ class AdminPartnerCreate(BaseModel):
     email: EmailStr
     password: str
     external_id: Optional[str] = None
+    merchant_support_email: str
+    merchant_support_phone: str
 
 
 class AdminPartnerUpdate(BaseModel):
@@ -45,6 +47,8 @@ class AdminPartnerUpdate(BaseModel):
     is_active: Optional[bool] = None
     external_id: Optional[str] = None
     fee_schedule_id: Optional[str] = None
+    merchant_support_email: Optional[str] = None
+    merchant_support_phone: Optional[str] = None
 
 
 class AdminPartnerResponse(BaseModel):
@@ -54,6 +58,8 @@ class AdminPartnerResponse(BaseModel):
     email: str
     external_id: Optional[str] = None
     logo_url: Optional[str] = None
+    merchant_support_email: Optional[str] = None
+    merchant_support_phone: Optional[str] = None
     is_active: bool
     fee_schedule_id: str
     created_at: datetime

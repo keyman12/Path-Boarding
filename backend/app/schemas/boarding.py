@@ -6,6 +6,8 @@ from pydantic import BaseModel, EmailStr
 class InviteInfoPartner(BaseModel):
     name: str
     logo_url: Optional[str] = None
+    merchant_support_email: Optional[str] = None
+    merchant_support_phone: Optional[str] = None
 
 
 class ProductPackageItemDisplay(BaseModel):
@@ -111,10 +113,30 @@ class Step6Submit(BaseModel):
     bank_sort_code: Optional[str] = None  # UK only (GBP + UK)
     bank_account_number: Optional[str] = None  # UK only (GBP + UK)
     bank_iban: Optional[str] = None  # EUR / non-UK
+    # Optional step5 and company data (sent when progressing from step5->step6)
+    vat_number: Optional[str] = None
+    customer_industry: Optional[str] = None
+    estimated_monthly_card_volume: Optional[str] = None
+    average_transaction_value: Optional[str] = None
+    delivery_timeframe: Optional[str] = None
+    customer_support_email: Optional[str] = None
+    customer_websites: Optional[str] = None
+    product_description: Optional[str] = None
+    company_name: Optional[str] = None
+    company_number: Optional[str] = None
+    company_registered_office: Optional[str] = None
+    company_incorporated_in: Optional[str] = None
+    company_incorporation_date: Optional[str] = None
+    company_industry_sic: Optional[str] = None
 
 
 class Step6Response(BaseModel):
     saved: bool = True
+
+
+class SubmitReviewResponse(BaseModel):
+    success: bool = True
+    agreement_pdf_path: Optional[str] = None
 
 
 class SaveForLaterSubmit(BaseModel):
@@ -135,3 +157,10 @@ class SaveForLaterSubmit(BaseModel):
     bank_sort_code: Optional[str] = None
     bank_account_number: Optional[str] = None
     bank_iban: Optional[str] = None
+    # Company (step4)
+    company_name: Optional[str] = None
+    company_number: Optional[str] = None
+    company_registered_office: Optional[str] = None
+    company_incorporated_in: Optional[str] = None
+    company_incorporation_date: Optional[str] = None
+    company_industry_sic: Optional[str] = None

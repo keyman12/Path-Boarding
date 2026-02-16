@@ -30,6 +30,9 @@ build/
 # Uploads (partner logos – user data)
 uploads/
 
+# Services Agreement PDF (copy manually to server; see backend/static/README.md)
+backend/static/*.pdf
+
 # Logs and coverage
 *.log
 .coverage

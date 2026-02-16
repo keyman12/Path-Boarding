@@ -220,6 +220,8 @@ def setup_new_isv(
     password: str = Form(...),
     fee_schedule_id: str = Form(...),
     external_id: str = Form(None),
+    merchant_support_email: str = Form(...),
+    merchant_support_phone: str = Form(...),
     logo: UploadFile = File(None),
     db: Session = Depends(get_db),
     admin: AdminUser = Depends(get_current_admin),
@@ -239,6 +241,8 @@ def setup_new_isv(
         hashed_password=get_password_hash(password),
         fee_schedule_id=fee_schedule_id,
         external_id=external_id or None,
+        merchant_support_email=merchant_support_email,
+        merchant_support_phone=merchant_support_phone,
         is_active=True,
     )
     db.add(partner)
@@ -319,6 +323,10 @@ def update_partner(
         if not schedule:
             raise HTTPException(status_code=400, detail="Fee schedule not found")
         partner.fee_schedule_id = body.fee_schedule_id
+    if body.merchant_support_email is not None:
+        partner.merchant_support_email = body.merchant_support_email
+    if body.merchant_support_phone is not None:
+        partner.merchant_support_phone = body.merchant_support_phone
     db.commit()
     db.refresh(partner)
     return partner

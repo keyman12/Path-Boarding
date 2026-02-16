@@ -1,9 +1,13 @@
-"""Send emails (verification code) via SMTP. From Path2ai.tech when configured."""
+"""Send emails (verification code, completion) via SMTP. From Path2ai.tech when configured."""
 
 import logging
+import os
 import smtplib
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 
 from app.core.config import settings
 
@@ -177,4 +181,128 @@ Path2ai.tech
         return False
     except Exception as e:
         logger.exception("Failed to send save for later email to %s: %s", to_email, e)
+        return False
+
+
+def send_completion_email(
+    to_email: str,
+    merchant_name: str,
+    portal_url: str,
+    pdf_path: str,
+) -> bool:
+    """
+    Send completion email with Merchant Agreement PDF and Services Agreement attached.
+    Thanks merchant by name, advises attachments for reference, link to portal, support email.
+    Returns True if sent, False if SMTP not configured or send failed.
+    """
+    if not settings.SMTP_HOST or not settings.SMTP_USER:
+        logger.warning("SMTP not configured (SMTP_HOST/SMTP_USER). Skipping completion email.")
+        return False
+
+    logo_url = _logo_url()
+    support_email = "support@path2ai.tech"
+    display_name = (merchant_name or "Merchant").strip() or "Merchant"
+
+    subject = "Your Path application is complete"
+    html = f"""
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+  <p style="margin-bottom: 24px;">
+    <img src="{logo_url}" alt="Path" width="140" height="48" style="display: block;" />
+  </p>
+  <p style="font-size: 16px; color: #1a1a1a; line-height: 1.5;">
+    Dear {display_name},
+  </p>
+  <p style="font-size: 16px; color: #1a1a1a; line-height: 1.5; margin-top: 16px;">
+    Thank you for completing your Path application. Your agreement documents are attached to this email for your reference.
+  </p>
+  <p style="font-size: 16px; color: #1a1a1a; line-height: 1.5; margin-top: 16px;">
+    If you would like to access your documents online, you can do so by clicking the link below:
+  </p>
+  <p style="margin: 24px 0;">
+    <a href="{portal_url}" style="display: inline-block; padding: 12px 24px; background-color: #297D2D; color: white; text-decoration: none; border-radius: 6px; font-weight: 500;">
+      Access Your Portal
+    </a>
+  </p>
+  <p style="font-size: 14px; color: #737373; margin-top: 24px;">
+    If you have any questions or issues, please contact us at <a href="mailto:{support_email}">{support_email}</a>.
+  </p>
+  <p style="font-size: 14px; color: #1a1a1a; margin-top: 24px;">
+    Sincerely,<br/>
+    The Path Team
+  </p>
+  <p style="font-size: 12px; color: #a3a3a3; margin-top: 32px;">
+    Path2ai.tech
+  </p>
+</body>
+</html>
+"""
+    text = f"""
+Dear {display_name},
+
+Thank you for completing your Path application. Your agreement documents are attached to this email for your reference.
+
+If you would like to access your documents online, you can do so by visiting:
+{portal_url}
+
+If you have any questions or issues, please contact us at {support_email}.
+
+Sincerely,
+The Path Team
+
+Path2ai.tech
+"""
+
+    # Use multipart/mixed with multipart/alternative for body so client shows one body (not duplicated)
+    msg = MIMEMultipart("mixed")
+    msg["Subject"] = subject
+    msg["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
+    msg["To"] = to_email
+
+    body_part = MIMEMultipart("alternative")
+    body_part.attach(MIMEText(text, "plain"))
+    body_part.attach(MIMEText(html, "html"))
+    msg.attach(body_part)
+
+    # Attach Merchant Agreement PDF
+    if os.path.isfile(pdf_path):
+        with open(pdf_path, "rb") as f:
+            part = MIMEBase("application", "pdf")
+            part.set_payload(f.read())
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", "attachment", filename="Path-Merchant-Agreement.pdf")
+            msg.attach(part)
+
+    # Attach Services Agreement (same path as /boarding/services-agreement endpoint)
+    backend_root = Path(__file__).resolve().parent.parent.parent
+    services_path = backend_root / settings.SERVICES_AGREEMENT_PATH
+    if services_path.exists():
+        with open(services_path, "rb") as f:
+            part = MIMEBase("application", "pdf")
+            part.set_payload(f.read())
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", "attachment", filename="Services-Agreement.pdf")
+            msg.attach(part)
+    else:
+        logger.warning("Services Agreement not found at %s, skipping attachment", services_path)
+
+    try:
+        with smtplib.SMTP(
+            settings.SMTP_HOST, settings.SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS
+        ) as server:
+            server.starttls()
+            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            server.sendmail(settings.SMTP_FROM_EMAIL, [to_email], msg.as_string())
+        logger.info("Completion email sent to %s", to_email)
+        return True
+    except smtplib.SMTPAuthenticationError as e:
+        logger.exception("SMTP login failed for %s: %s", to_email, e)
+        return False
+    except (OSError, TimeoutError) as e:
+        logger.exception("SMTP connection error for %s: %s", to_email, e)
+        return False
+    except Exception as e:
+        logger.exception("Failed to send completion email to %s: %s", to_email, e)
         return False
