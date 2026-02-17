@@ -755,6 +755,16 @@ export default function BoardingEntryPage() {
   // Mock company data for Step 4 (Companies House API to be connected later)
   const MOCK_COMPANIES = [
     {
+      name: "PATHCAFE LTD",
+      number: "13377890",
+      status: "Active" as const,
+      registeredOffice: "Southend-on-Sea",
+      fullAddress: "87 Broadclyst Gardens\nSouthend-on-Sea\nSS1 3QU",
+      incorporated: "10 April 2021",
+      industry: "Restaurants and mobile food service",
+      hasCorporateShareholders: false,
+    },
+    {
       name: "PATH PAYMENTS LTD",
       number: "12345678",
       status: "Active" as const,
@@ -796,10 +806,10 @@ export default function BoardingEntryPage() {
     }
     const timer = setTimeout(() => {
       setCompanySearchLoading(true);
-      // Mock: return PATH PAYMENTS LTD if search matches
-      const query = companySearchText.trim().toUpperCase();
+      // Mock: return companies if search matches name or number
+      const query = companySearchText.trim().toUpperCase().replace(/\s/g, "");
       const matches = MOCK_COMPANIES.filter((c) =>
-        c.name.toUpperCase().includes(query) || c.number.includes(query)
+        c.name.toUpperCase().replace(/\s/g, "").includes(query) || c.number.includes(query)
       );
       setCompanySearchResults(matches);
       setCompanySearchLoading(false);

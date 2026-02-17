@@ -38,11 +38,26 @@ export async function apiGet<T>(path: string, options?: RequestInit): Promise<Ap
     method: "GET",
     headers: { "Content-Type": "application/json", ...options?.headers },
   });
-  const json = await res.json().catch(() => ({}));
+  const text = await res.text();
+  const json = (() => {
+    try {
+      return text ? JSON.parse(text) : {};
+    } catch {
+      return { _raw: text };
+    }
+  })();
   if (!res.ok) {
+    const detail = (json as { detail?: unknown }).detail ?? (json as { message?: unknown }).message;
+    let err = errorMessage(detail);
+    if (err === "Request failed" && (json as { _raw?: string })._raw) {
+      const raw = (json as { _raw: string })._raw;
+      err = `Request failed (${res.status}): ${raw.slice(0, 150)}${raw.length > 150 ? "…" : ""}`;
+    } else if (err === "Request failed" && res.status) {
+      err = `Request failed (HTTP ${res.status})`;
+    }
     return {
-      error: errorMessage(json.detail ?? json.message),
-      validation_errors: json.validation_errors ?? json.detail,
+      error: err,
+      validation_errors: (json as { validation_errors?: unknown }).validation_errors ?? detail,
       statusCode: res.status,
     };
   }
@@ -82,11 +97,26 @@ export async function apiPost<T>(
     headers: { "Content-Type": "application/json", ...options?.headers },
     body: body != null ? JSON.stringify(body) : undefined,
   });
-  const json = await res.json().catch(() => ({}));
+  const text = await res.text();
+  const json = (() => {
+    try {
+      return text ? JSON.parse(text) : {};
+    } catch {
+      return { _raw: text };
+    }
+  })();
   if (!res.ok) {
+    const detail = (json as { detail?: unknown }).detail ?? (json as { message?: unknown }).message;
+    let err = errorMessage(detail);
+    if (err === "Request failed" && (json as { _raw?: string })._raw) {
+      const raw = (json as { _raw: string })._raw;
+      err = `Request failed (${res.status}): ${raw.slice(0, 150)}${raw.length > 150 ? "…" : ""}`;
+    } else if (err === "Request failed" && res.status) {
+      err = `Request failed (HTTP ${res.status})`;
+    }
     return {
-      error: errorMessage(json.detail ?? json.message),
-      validation_errors: json.validation_errors ?? json.detail,
+      error: err,
+      validation_errors: (json as { validation_errors?: unknown }).validation_errors ?? detail,
       statusCode: res.status,
     };
   }
