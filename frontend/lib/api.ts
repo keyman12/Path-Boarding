@@ -55,9 +55,10 @@ export async function apiGet<T>(path: string, options?: RequestInit): Promise<Ap
     } else if (err === "Request failed" && res.status) {
       err = `Request failed (HTTP ${res.status})`;
     }
+    const validationErrors = (json as { validation_errors?: Record<string, string[]> }).validation_errors;
     return {
       error: err,
-      validation_errors: (json as { validation_errors?: unknown }).validation_errors ?? detail,
+      validation_errors: validationErrors,
       statusCode: res.status,
     };
   }
@@ -114,9 +115,10 @@ export async function apiPost<T>(
     } else if (err === "Request failed" && res.status) {
       err = `Request failed (HTTP ${res.status})`;
     }
+    const validationErrors = (json as { validation_errors?: Record<string, string[]> }).validation_errors;
     return {
       error: err,
-      validation_errors: (json as { validation_errors?: unknown }).validation_errors ?? detail,
+      validation_errors: validationErrors,
       statusCode: res.status,
     };
   }
