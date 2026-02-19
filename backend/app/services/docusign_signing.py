@@ -6,6 +6,7 @@ import base64
 import logging
 import os
 from pathlib import Path
+from typing import Optional
 
 from docusign_esign import (
     ApiClient,
@@ -113,7 +114,7 @@ def create_envelope_and_get_signing_url(
     signer_email: str,
     signer_name: str,
     return_url: str,
-    services_agreement_path: str | None = None,
+    services_agreement_path: Optional[str] = None,
 ) -> tuple[str, str]:
     """
     Create a DocuSign envelope with the Path Agreement (and optionally Services Agreement).

@@ -103,7 +103,7 @@ SIGNATURE_VALUE_COL = 305
 
 
 def _field_line(
-    c: canvas.Canvas, y: float, label: str, value: str, indent: int = 0, value_x: float | None = None
+    c: canvas.Canvas, y: float, label: str, value: str, indent: int = 0, value_x: Optional[float] = None
 ) -> float:
     """Draw label in col 1, value in col 2. Both left justified. Optional value_x overrides value column."""
     lx = LABEL_COL + indent
