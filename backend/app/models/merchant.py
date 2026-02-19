@@ -13,6 +13,8 @@ class Merchant(Base):
     legal_name = Column(String(255), nullable=True)
     trading_name = Column(String(255), nullable=True)
     agreement_pdf_path = Column(String(512), nullable=True)  # Path to generated agreement PDF
+    signed_agreement_pdf_path = Column(String(512), nullable=True)  # Path to DocuSign-signed PDF (with CoC)
+    docusign_envelope_id = Column(String(64), nullable=True)  # DocuSign envelope ID for e-sign
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

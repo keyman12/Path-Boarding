@@ -137,6 +137,8 @@ class Step6Response(BaseModel):
 class SubmitReviewResponse(BaseModel):
     success: bool = True
     agreement_pdf_path: Optional[str] = None
+    redirect_to_signing: bool = False
+    signing_url: Optional[str] = None
 
 
 class SaveForLaterSubmit(BaseModel):

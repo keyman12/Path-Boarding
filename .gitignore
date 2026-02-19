@@ -33,6 +33,10 @@ uploads/
 # Services Agreement PDF (copy manually to server; see backend/static/README.md)
 backend/static/*.pdf
 
+# DocuSign secrets (use env vars in production)
+Docusign/Path-python/app/ds_config.py
+Docusign/Path-python/app/private.key
+
 # Logs and coverage
 *.log
 .coverage

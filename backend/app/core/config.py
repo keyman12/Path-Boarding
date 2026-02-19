@@ -73,6 +73,16 @@ class Settings(BaseSettings):
     SUMSUB_BASE_URL: str = "https://api.sumsub.com"
     SUMSUB_LEVEL_NAME: str = "basic-kyc-level"
 
+    # DocuSign eSignature (JWT auth)
+    DOCUSIGN_INTEGRATION_KEY: str = ""
+    DOCUSIGN_USER_ID: str = ""  # ds_impersonated_user_id
+    DOCUSIGN_ACCOUNT_ID: str = ""  # Optional: from JWT userinfo if not set
+    DOCUSIGN_PRIVATE_KEY: str = ""  # RSA private key contents (or path to file)
+    DOCUSIGN_AUTH_SERVER: str = "account-d.docusign.com"  # Demo: account-d, Prod: account
+    DOCUSIGN_BASE_PATH: str = "https://demo.docusign.net"  # Demo: demo.docusign.net, Prod: na.docusign.net or eu.docusign.net
+    # Base URL for DocuSign return/callback (where DocuSign redirects after signing)
+    DOCUSIGN_RETURN_URL_BASE: str = "http://localhost:8000"
+
     class Config:
         env_file = ".env"
         case_sensitive = True

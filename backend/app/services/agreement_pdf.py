@@ -98,12 +98,16 @@ def _section_title(c: canvas.Canvas, y: float, text: str) -> float:
 # Two-column layout: labels left, values right. Left justified.
 LABEL_COL = 40
 VALUE_COL = 280  # 50% further than original 200
+# Signature block: align with DocuSign SignHere tab (anchor + x_offset)
+SIGNATURE_VALUE_COL = 305
 
 
-def _field_line(c: canvas.Canvas, y: float, label: str, value: str, indent: int = 0) -> float:
-    """Draw label in col 1, value in col 2. Both left justified."""
+def _field_line(
+    c: canvas.Canvas, y: float, label: str, value: str, indent: int = 0, value_x: float | None = None
+) -> float:
+    """Draw label in col 1, value in col 2. Both left justified. Optional value_x overrides value column."""
     lx = LABEL_COL + indent
-    vx = VALUE_COL + indent
+    vx = value_x if value_x is not None else (VALUE_COL + indent)
     c.setFont("Helvetica", 9)
     c.setFillColor(PATH_GREY)
     c.drawString(lx, y, f"{label}:")
@@ -387,12 +391,27 @@ def generate_agreement_pdf(
         y -= 12
     y -= 16
 
-    # Signature block
-    ensure_section_fits(4)
+    # Signature block – invisible anchor /sn1/ for DocuSign SignHere, extra space before Print Name
+    ensure_section_fits(6)
     y = _section_title(c, y, "Signed for and on Behalf of the Merchant*")
-    y = _field_line(c, y, "Merchant Signature", "[E-signature will be integrated here]")
-    y = _field_line(c, y, "Print Name and Title", applicant_name + " / Director")
-    y = _field_line(c, y, "Date", "[Date]")
+    # Merchant Signature: draw label, then invisible anchor for DocuSign (white on white)
+    c.setFont("Helvetica", 9)
+    c.setFillColor(PATH_GREY)
+    c.drawString(LABEL_COL, y, "Merchant Signature:")
+    c.setFillColor(colors.white)
+    c.drawString(SIGNATURE_VALUE_COL, y, "/sn1/")
+    c.setFillColor(PATH_BLACK)
+    y -= LINE_HEIGHT_FIELD
+    y -= 28  # Extra space between signature area and printed name
+    # Print Name and Date: align with signature box (SIGNATURE_VALUE_COL)
+    y = _field_line(c, y, "Print Name and Title", applicant_name + " / Director", value_x=SIGNATURE_VALUE_COL)
+    # Date: invisible [Date] anchor for DocuSign DateSigned (white so it doesn't overlap the auto-populated date)
+    c.setFont("Helvetica", 9)
+    c.setFillColor(PATH_GREY)
+    c.drawString(LABEL_COL, y, "Date:")
+    c.setFillColor(colors.white)
+    c.drawString(SIGNATURE_VALUE_COL, y, "[Date]")
+    c.setFillColor(PATH_BLACK)
     y -= LINE_HEIGHT_FIELD
 
     _draw_footer(c, page_num)
@@ -437,6 +456,70 @@ def _blank_objects() -> tuple[Any, Any, Any, Any, Any]:
     merchant = SimpleNamespace(trading_name=None)
     invite = SimpleNamespace(merchant_name=None)
     return contact, merchant, invite, None, None
+
+
+def add_signature_block_to_services_agreement(
+    source_path: str,
+    output_path: str,
+    applicant_name: str,
+) -> str:
+    """
+    Append a signature block page to the Services Agreement PDF.
+    Same layout as the Path Agreement: Signed for and on Behalf of the Merchant,
+    with invisible anchors /sn2/ and [Date2] for DocuSign.
+    Returns the output path.
+    """
+    from pypdf import PdfReader, PdfWriter
+    from io import BytesIO
+
+    if not os.path.isfile(source_path):
+        raise FileNotFoundError(f"Services Agreement not found: {source_path}")
+
+    # Create signature block page with reportlab
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    page_num = 1  # This will be the last page
+
+    logo_path = Path(__file__).resolve().parent.parent.parent / "static" / "path-logo.png"
+    logo_str = str(logo_path) if logo_path.exists() else None
+    _draw_header(c, logo_str)
+    y = height - 100
+
+    # Signature block – same as Path Agreement but with /sn2/ and [Date2]
+    y = _section_title(c, y, "Signed for and on Behalf of the Merchant*")
+    c.setFont("Helvetica", 9)
+    c.setFillColor(PATH_GREY)
+    c.drawString(LABEL_COL, y, "Merchant Signature:")
+    c.setFillColor(colors.white)
+    c.drawString(SIGNATURE_VALUE_COL, y, "/sn2/")
+    c.setFillColor(PATH_BLACK)
+    y -= LINE_HEIGHT_FIELD
+    y -= 28
+    y = _field_line(c, y, "Print Name and Title", applicant_name + " / Director", value_x=SIGNATURE_VALUE_COL)
+    c.setFont("Helvetica", 9)
+    c.setFillColor(PATH_GREY)
+    c.drawString(LABEL_COL, y, "Date:")
+    c.setFillColor(colors.white)
+    c.drawString(SIGNATURE_VALUE_COL, y, "[Date2]")
+    c.setFillColor(PATH_BLACK)
+    y -= LINE_HEIGHT_FIELD
+
+    _draw_footer(c, page_num)
+    c.save()
+    buffer.seek(0)
+
+    # Merge: original Services Agreement + signature page
+    reader_orig = PdfReader(source_path)
+    reader_sig = PdfReader(buffer)
+    writer = PdfWriter()
+    for page in reader_orig.pages:
+        writer.add_page(page)
+    writer.add_page(reader_sig.pages[0])
+    with open(output_path, "wb") as f:
+        writer.write(f)
+
+    return output_path
 
 
 def generate_blank_agreement_pdf(output_path: str) -> str:

@@ -8,7 +8,7 @@ from pathlib import Path as PathLib
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -828,6 +828,113 @@ async def complete_sumsub_verification(
     }
 
 
+@router.get("/docusign-callback")
+def docusign_callback(
+    state: str = Query(..., description="Invite token (passed as state)"),
+    event: str = Query(None, description="DocuSign event e.g. signing_complete"),
+    db: Session = Depends(get_db),
+):
+    """
+    DocuSign redirects here after user completes signing.
+    Marks boarding complete, downloads signed PDF, sends completion email, redirects to done page.
+    """
+    token = state
+    invite = db.query(Invite).filter(Invite.token == token).first()
+    if not invite:
+        # Redirect to frontend with error
+        frontend_url = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/board/{token}?error=invalid_link"
+        return RedirectResponse(url=frontend_url, status_code=302)
+    event_obj = db.query(BoardingEvent).filter(BoardingEvent.id == invite.boarding_event_id).first()
+    if not event_obj or not event_obj.merchant_id:
+        frontend_url = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/board/{token}?error=invalid_link"
+        return RedirectResponse(url=frontend_url, status_code=302)
+    merchant = db.query(Merchant).filter(Merchant.id == event_obj.merchant_id).first()
+    contact = db.query(BoardingContact).filter(BoardingContact.boarding_event_id == event_obj.id).first()
+    if not merchant or not contact:
+        frontend_url = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/board/{token}?error=invalid_link"
+        return RedirectResponse(url=frontend_url, status_code=302)
+
+    # Already completed – just redirect to done page
+    if event_obj.status == BoardingStatus.completed:
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_BASE_URL.rstrip('/')}/board/{token}",
+            status_code=302,
+        )
+
+    upload_dir = PathLib(settings.UPLOAD_DIR)
+    envelope_id = merchant.docusign_envelope_id
+    if not envelope_id:
+        logger.warning("DocuSign callback for token %s but no envelope_id", token)
+        # Still mark complete and send email with unsigned PDF
+        event_obj.status = BoardingStatus.completed
+        event_obj.completed_at = datetime.now(timezone.utc)
+        contact.current_step = "done"
+        db.commit()
+        pdf_path = upload_dir / (merchant.agreement_pdf_path or "")
+        if pdf_path.exists():
+            from app.services.email import send_completion_email
+
+            portal_url = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/board/{token}"
+            merchant_name = f"{(contact.legal_first_name or '').strip()} {(contact.legal_last_name or '').strip()}".strip() or (contact.email or "Merchant")
+            send_completion_email(
+                to_email=contact.email,
+                merchant_name=merchant_name,
+                portal_url=portal_url,
+                pdf_path=str(pdf_path),
+            )
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_BASE_URL.rstrip('/')}/board/{token}",
+            status_code=302,
+        )
+
+    # Download signed PDF and send completion email
+    signed_pdf_path = None
+    try:
+        from app.services.docusign_signing import download_completed_document
+
+        upload_dir = PathLib(settings.UPLOAD_DIR)
+        agreements_dir = upload_dir / "agreements"
+        agreements_dir.mkdir(parents=True, exist_ok=True)
+        signed_filename = f"signed-{merchant.id}-{envelope_id[:8]}.pdf"
+        signed_pdf_path = agreements_dir / signed_filename
+        if download_completed_document(envelope_id, str(signed_pdf_path)):
+            relative_signed = f"agreements/{signed_filename}"
+            merchant.signed_agreement_pdf_path = relative_signed
+            pdf_for_email = str(signed_pdf_path)
+        else:
+            # Fallback to unsigned if download fails
+            pdf_for_email = str(upload_dir / (merchant.agreement_pdf_path or ""))
+            if not PathLib(pdf_for_email).exists():
+                pdf_for_email = ""
+    except Exception as e:
+        logger.exception("Failed to download signed DocuSign document: %s", e)
+        pdf_for_email = str(upload_dir / (merchant.agreement_pdf_path or "")) if merchant.agreement_pdf_path else ""
+        if not PathLib(pdf_for_email).exists():
+            pdf_for_email = ""
+
+    event_obj.status = BoardingStatus.completed
+    event_obj.completed_at = datetime.now(timezone.utc)
+    contact.current_step = "done"
+    db.commit()
+
+    if pdf_for_email and PathLib(pdf_for_email).exists():
+        from app.services.email import send_completion_email
+
+        portal_url = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/board/{token}"
+        merchant_name = f"{(contact.legal_first_name or '').strip()} {(contact.legal_last_name or '').strip()}".strip() or (contact.email or "Merchant")
+        send_completion_email(
+            to_email=contact.email,
+            merchant_name=merchant_name,
+            portal_url=portal_url,
+            pdf_path=pdf_for_email,
+        )
+
+    return RedirectResponse(
+        url=f"{settings.FRONTEND_BASE_URL.rstrip('/')}/board/{token}",
+        status_code=302,
+    )
+
+
 @router.post("/submit-review", response_model=SubmitReviewResponse)
 def submit_review(
     token: str = Query(..., description="Invite token"),
@@ -909,6 +1016,48 @@ def submit_review(
     # Store relative path for portability
     relative_path = f"agreements/{pdf_filename}"
     merchant.agreement_pdf_path = relative_path
+
+    # DocuSign: create envelope and return signing URL (don't complete yet)
+    if settings.DOCUSIGN_INTEGRATION_KEY and settings.DOCUSIGN_USER_ID:
+        try:
+            from app.services.docusign_signing import create_envelope_and_get_signing_url
+
+            return_url_base = settings.DOCUSIGN_RETURN_URL_BASE.rstrip("/")
+            return_url = f"{return_url_base}/boarding/docusign-callback?state={token}"
+            signer_email = contact.email or ""
+            signer_name = f"{(contact.legal_first_name or '').strip()} {(contact.legal_last_name or '').strip()}".strip() or "Signer"
+            if not signer_email:
+                raise HTTPException(status_code=400, detail="Email required for e-signature.")
+            backend_root = PathLib(__file__).resolve().parent.parent.parent
+            services_path = backend_root / settings.SERVICES_AGREEMENT_PATH
+            envelope_id, signing_url = create_envelope_and_get_signing_url(
+                pdf_path=str(pdf_path),
+                signer_email=signer_email,
+                signer_name=signer_name,
+                return_url=return_url,
+                services_agreement_path=str(services_path) if services_path.exists() else None,
+            )
+            merchant.docusign_envelope_id = envelope_id
+            contact.current_step = "step6"  # Keep at review until signed
+            db.commit()
+            return SubmitReviewResponse(
+                success=True,
+                agreement_pdf_path=relative_path,
+                redirect_to_signing=True,
+                signing_url=signing_url,
+            )
+        except ValueError as e:
+            logger.warning("DocuSign setup issue: %s. Completing without e-sign.", e)
+            # Fall through to non-DocuSign flow
+        except Exception as e:
+            logger.exception("DocuSign envelope creation failed: %s", e)
+            err_msg = str(e)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to create signing session: {err_msg}",
+            )
+
+    # Non-DocuSign flow: mark completed and send email
     contact.current_step = "done"
     event.status = BoardingStatus.completed
     event.completed_at = datetime.now(timezone.utc)
@@ -1054,7 +1203,8 @@ def get_agreement_pdf(
     db: Session = Depends(get_db),
 ):
     """
-    Public: Download the generated merchant agreement PDF.
+    Public: Download the merchant agreement PDF.
+    Serves the signed PDF (with DocuSign e-sign info) when available, otherwise the unsigned PDF.
     Requires a valid invite token for a completed boarding.
     """
     invite = db.query(Invite).filter(Invite.token == token).first()
@@ -1064,9 +1214,13 @@ def get_agreement_pdf(
     if not event or not event.merchant_id:
         raise HTTPException(status_code=404, detail="Agreement not found")
     merchant = db.query(Merchant).filter(Merchant.id == event.merchant_id).first()
-    if not merchant or not merchant.agreement_pdf_path:
+    if not merchant:
+        raise HTTPException(status_code=404, detail="Agreement not found")
+    # Prefer signed PDF (with DocuSign e-sign info) when available
+    pdf_path = merchant.signed_agreement_pdf_path or merchant.agreement_pdf_path
+    if not pdf_path:
         raise HTTPException(status_code=404, detail="Agreement PDF not yet generated. Complete the flow or use Regenerate.")
-    full_path = PathLib(settings.UPLOAD_DIR) / merchant.agreement_pdf_path
+    full_path = PathLib(settings.UPLOAD_DIR) / pdf_path
     if not full_path.exists():
         raise HTTPException(status_code=404, detail="Agreement file not found")
     return FileResponse(

@@ -387,16 +387,22 @@ export default function BoardingEntryPage() {
     return null;
   }
 
-  // Website: must have http/https and a TLD like .com (supports comma-separated)
+  // Website: accepts www.name.com, name.com, or http(s)://... (supports comma-separated)
   function validateWebsite(value: string): string | null {
     const t = value.trim();
     if (!t) return null; // optional
     const urls = t.split(",").map((u) => u.trim()).filter(Boolean);
+    // Domain with TLD: www.example.com, example.com, example.co.uk
+    const domainOnly = /^(www\.)?[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}(\.[a-zA-Z]{2,})?$/i;
+    const withProtocol = /^https?:\/\/[^\s]+$/i;
+    const hasTld = (u: string) => {
+      const withoutProtocol = u.replace(/^https?:\/\//i, "").split("/")[0];
+      return /\.[a-z]{2,}(\.[a-z]{2,})?$/i.test(withoutProtocol);
+    };
     for (const url of urls) {
-      const hasProtocol = /^https?:\/\//i.test(url);
-      const hasTld = /\.[a-z]{2,}(\.[a-z]{2,})?$/i.test(url);
-      if (!hasProtocol) return "Enter a valid URL starting with http:// or https://";
-      if (!hasTld) return "Enter a valid URL with a domain (e.g. .com, .co.uk)";
+      if (domainOnly.test(url)) continue; // www.name.com or name.com
+      if (withProtocol.test(url) && hasTld(url)) continue; // http(s)://...
+      return "Enter a valid URL (e.g. www.example.com or https://www.example.com)";
     }
     return null;
   }
@@ -1477,7 +1483,8 @@ export default function BoardingEntryPage() {
                           </label>
                           <select
                             id="address-picker"
-                            className="w-full border border-path-grey-300 rounded-lg px-3 py-2 text-path-p1 bg-white board-focus"
+                            className="w-full border border-path-grey-300 rounded-lg px-3 py-2 text-path-p1 bg-white h-11 board-focus"
+                            style={{ minHeight: "2.75rem" }}
                             value=""
                             onChange={(e) => {
                               const idx = e.target.value ? parseInt(e.target.value, 10) : -1;
@@ -3029,7 +3036,7 @@ export default function BoardingEntryPage() {
                     setCustomerWebsitesError(null);
                   }}
                   onBlur={() => setCustomerWebsitesError(validateWebsite(customerWebsites))}
-                  placeholder="e.g. https://www.example.com (comma-separated for multiple)"
+                  placeholder="e.g. www.example.com or https://www.example.com (comma-separated for multiple)"
                   className={`w-full px-3 py-2 border rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary ${customerWebsitesError ? "border-path-secondary" : "border-path-grey-300"}`}
                 />
                 {customerWebsitesError && (
@@ -3628,13 +3635,22 @@ export default function BoardingEntryPage() {
                 if (!reviewAgreeChecked) return;
                 setReviewSubmitting(true);
                 try {
-                  const res = await apiPost<{ success: boolean; agreement_pdf_path?: string }>(
+                  const res = await apiPost<{
+                    success: boolean;
+                    agreement_pdf_path?: string;
+                    redirect_to_signing?: boolean;
+                    signing_url?: string;
+                  }>(
                     `/boarding/submit-review?token=${encodeURIComponent(token ?? "")}`,
                     {}
                   );
                   if (res.error) {
                     alert(res.error);
                     setReviewSubmitting(false);
+                    return;
+                  }
+                  if (res.data?.redirect_to_signing && res.data?.signing_url) {
+                    window.location.href = res.data.signing_url;
                     return;
                   }
                   setStep("done");

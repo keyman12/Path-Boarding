@@ -20,3 +20,5 @@ email-validator>=2.1.0
 phonenumbers>=8.13.0
 httpx>=0.25.0
 reportlab>=4.0.0
+docusign-esign>=5.4.0
+pypdf>=4.0.0
