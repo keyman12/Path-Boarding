@@ -12,7 +12,7 @@ Complete deployment guide for Path Boarding on AWS, including DocuSign e-signatu
 |------|---------|
 | **Code** | `git pull` on server (no upload needed) |
 | **Services Agreement** | `scp "/path/to/Services Agreement.pdf" ec2-user@boarding.path2ai.tech:/tmp/` |
-| **DocuSign private key** | `scp /path/to/private.key ec2-user@boarding.path2ai.tech:/tmp/` |
+| **DocuSign private key** | `scp /path/to/private.key ec2-user@boarding.path2ai.tech:/tmp/` → move to `/opt/boarding/keys/private.key` |
 | **Secrets** | Edit `/opt/boarding/backend.env` on server (never commit) |
 
 ---
@@ -34,8 +34,11 @@ Complete deployment guide for Path Boarding on AWS, including DocuSign e-signatu
 |------|--------------------|---------|
 | **Services Agreement.pdf** | `/opt/boarding/repo/backend/static/Services Agreement.pdf` | DocuSign: second document in signing flow; must exist for both docs to be signed |
 | **path-logo.png** | `/opt/boarding/repo/backend/static/path-logo.png` | Path logo in PDFs and emails (may already be in repo) |
+| **private.key** (DocuSign) | `/opt/boarding/keys/private.key` | DocuSign JWT RSA private key; referenced by `DOCUSIGN_PRIVATE_KEY` in backend.env |
 
 **Services Agreement:** Copy from your source (e.g. Path Design / Desktop). Filename must be exactly `Services Agreement.pdf` (with space). If missing, only the Path Agreement is signed.
+
+**DocuSign private key:** Upload once; path is set in `backend.env` as `DOCUSIGN_PRIVATE_KEY=/opt/boarding/keys/private.key`.
 
 ### Supporting Packages (from requirements.txt)
 
@@ -71,9 +74,9 @@ UPLOAD_DIR="/opt/boarding/uploads"
 | `DOCUSIGN_INTEGRATION_KEY` | Integration Key from DocuSign Apps and Keys | `...` |
 | `DOCUSIGN_USER_ID` | User ID (GUID) from DocuSign | `...` |
 | `DOCUSIGN_ACCOUNT_ID` | Optional; from userinfo if not set | `...` |
-| `DOCUSIGN_PRIVATE_KEY` | RSA private key contents or path to `.key` file | `-----BEGIN RSA PRIVATE KEY-----...` |
-| `DOCUSIGN_AUTH_SERVER` | Demo: `account-d.docusign.com`; Prod: `account.docusign.com` | `account-d.docusign.com` |
-| `DOCUSIGN_BASE_PATH` | Demo: `https://demo.docusign.net`; Prod: `https://na.docusign.net` or `https://eu.docusign.net` | `https://demo.docusign.net` |
+| `DOCUSIGN_PRIVATE_KEY` | Path to `.key` file or full RSA key contents | `/opt/boarding/keys/private.key` |
+| `DOCUSIGN_AUTH_SERVER` | Optional; Demo: `account-d.docusign.com`; Prod: `account.docusign.com` | `account-d.docusign.com` |
+| `DOCUSIGN_BASE_PATH` | Optional; Demo: `https://demo.docusign.net`; Prod: `https://na.docusign.net` | `https://demo.docusign.net` |
 | `DOCUSIGN_RETURN_URL_BASE` | Where DocuSign redirects after signing | `https://boarding.path2ai.tech` |
 
 **DocuSign redirect URI:** Add `https://boarding.path2ai.tech/boarding/docusign-callback` in DocuSign Admin → Apps and Keys → Add URI.
@@ -92,9 +95,11 @@ UPLOAD_DIR="/opt/boarding/uploads"
 
 ### Other (as needed)
 
-- SMTP vars for email
-- SumSub vars for identity verification
-- `ADDRESS_LOOKUP_UK_API_KEY` for UK address lookup
+| Variable | Purpose |
+|----------|---------|
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_*` | Email (verification links) |
+| `SUMSUB_APP_TOKEN`, `SUMSUB_SECRET_KEY`, `SUMSUB_BASE_URL`, `SUMSUB_LEVEL_NAME` | SumSub identity verification |
+| `ADDRESS_LOOKUP_UK_API_KEY` | UK address lookup (Ideal Postcodes) |
 
 ---
 
@@ -131,39 +136,37 @@ sudo chmod 600 /opt/boarding/backend.env
 sudo chown ec2-user:ec2-user /opt/boarding/backend.env
 ```
 
-### Option B: Upload private key file (DocuSign)
+### Option B: Upload private key file (DocuSign) – current setup
 
-If you prefer to keep the key in a file:
+The production server uses `/opt/boarding/keys/private.key`. If the key is not yet on the server:
 
-1. **From your Mac** (where `private.key` lives, e.g. from DocuSign JWT setup):
+1. **From your Mac** (where `private.key` lives, e.g. from DocuSign Apps and Keys → Generate RSA):
 
 ```bash
-# Upload the key to a secure location on the server
 scp /path/to/private.key ec2-user@boarding.path2ai.tech:/tmp/private.key
 ```
 
 2. **On the server:**
 
 ```bash
-# Move to a secure, non-repo location
-sudo mkdir -p /opt/boarding/secrets
-sudo mv /tmp/private.key /opt/boarding/secrets/docusign_private.key
+# Create keys directory and move key (matches current AWS setup)
+sudo mkdir -p /opt/boarding/keys
+sudo mv /tmp/private.key /opt/boarding/keys/private.key
 
 # Restrict permissions (only owner can read)
-sudo chmod 600 /opt/boarding/secrets/docusign_private.key
-sudo chown ec2-user:ec2-user /opt/boarding/secrets/docusign_private.key
+sudo chmod 600 /opt/boarding/keys/private.key
+sudo chown ec2-user:ec2-user /opt/boarding/keys/private.key
 
-# Remove from /tmp (if it was left there)
 rm -f /tmp/private.key
 ```
 
-3. **In `/opt/boarding/backend.env`**, set the path:
+3. **In `/opt/boarding/backend.env`**, set:
 
 ```
-DOCUSIGN_PRIVATE_KEY="/opt/boarding/secrets/docusign_private.key"
+DOCUSIGN_PRIVATE_KEY=/opt/boarding/keys/private.key
 ```
 
-The backend reads the key from the file when it starts.
+The backend reads the key from the file when it starts. If the key is already at this path, no upload is needed.
 
 ### Option C: AWS Secrets Manager (advanced)
 
@@ -178,7 +181,7 @@ For production, you can store secrets in AWS Secrets Manager and inject them at 
 
 - [ ] Never commit `backend.env`, `private.key`, or any file containing secrets
 - [ ] Use `chmod 600` on env and key files
-- [ ] Prefer `/opt/boarding/secrets/` (outside repo) for key files
+- [ ] Keep keys in `/opt/boarding/keys/` (outside repo)
 - [ ] Rotate secrets if they may have been exposed
 
 ---
@@ -226,11 +229,11 @@ sudo chown -R ec2-user:ec2-user /opt/boarding/repo/backend/static
 # Path logo (if uploaded)
 sudo mv /tmp/path-logo.png /opt/boarding/repo/backend/static/ 2>/dev/null || true
 
-# DocuSign private key (if using file – see Section 2a Option B)
-sudo mkdir -p /opt/boarding/secrets
-sudo mv /tmp/private.key /opt/boarding/secrets/docusign_private.key 2>/dev/null || true
-sudo chmod 600 /opt/boarding/secrets/docusign_private.key 2>/dev/null || true
-sudo chown ec2-user:ec2-user /opt/boarding/secrets/docusign_private.key 2>/dev/null || true
+# DocuSign private key (if not already at /opt/boarding/keys/private.key)
+sudo mkdir -p /opt/boarding/keys
+sudo mv /tmp/private.key /opt/boarding/keys/private.key 2>/dev/null || true
+sudo chmod 600 /opt/boarding/keys/private.key 2>/dev/null || true
+sudo chown ec2-user:ec2-user /opt/boarding/keys/private.key 2>/dev/null || true
 rm -f /tmp/private.key
 ```
 
@@ -302,6 +305,28 @@ sudo systemctl restart path-boarding-backend path-boarding-frontend
 
 ## 5. Troubleshooting
 
+### 502 Bad Gateway / Backend workers fail to boot
+
+If `curl -s https://boarding.path2ai.tech/health` returns 502 and `systemctl status path-boarding-backend` shows `activating (auto-restart)`:
+
+**1. Check application error log**
+
+```bash
+sudo cat /var/log/boarding/backend-error.log
+```
+
+**2. Common fixes**
+
+- **TypeError "unsupported operand type(s) for |"** – Server runs Python 3.9; code used `str | None` (Python 3.10+). Pull latest code (uses `Optional[str]`) and restart.
+- **ModuleNotFoundError: No module named 'reportlab'** – Run `sudo /opt/boarding/venv/bin/pip install -r /opt/boarding/repo/backend/requirements.txt` then restart.
+- **column ... does not exist** – Run migrations: `cd /opt/boarding/repo/backend && set -a && source /opt/boarding/backend.env && set +a && /opt/boarding/venv/bin/alembic upgrade head`
+
+**3. Restart backend**
+
+```bash
+sudo systemctl restart path-boarding-backend
+```
+
 ### "No module named 'pypdf'"
 
 ```bash
@@ -329,9 +354,114 @@ set -a && source /opt/boarding/backend.env && set +a
 /opt/boarding/venv/bin/alembic history
 ```
 
+### Admin / Partners not visible
+
+If you cannot see the Admin account or partner accounts on production:
+
+**1. Check backend is running and reachable**
+
+```bash
+# On server
+sudo systemctl status path-boarding-backend
+curl -s https://boarding.path2ai.tech/health
+```
+
+**2. Verify database and migrations**
+
+```bash
+cd /opt/boarding/repo/backend
+set -a && source /opt/boarding/backend.env && set +a
+/opt/boarding/venv/bin/alembic current   # Should show latest revision (e.g. 020)
+```
+
+**3. Check admin_users and partners tables exist and have data**
+
+```bash
+# Connect to RDS (use DATABASE_URL from backend.env)
+psql "$DATABASE_URL" -c "SELECT id, username FROM admin_users;"
+psql "$DATABASE_URL" -c "SELECT id, name, email FROM partners;"
+```
+
+If `admin_users` is empty, the startup seed should have created Admin. Restart the backend once; it seeds on startup when no admin exists. Default: `Admin` / `keywee50`.
+
+**4. Frontend API URL (build-time)**
+
+`NEXT_PUBLIC_API_URL` is baked in at build time. If the frontend was built with `http://localhost:8000`, API calls from the browser would fail (no backend on the user’s machine).
+
+```bash
+# On server – ensure .env.production before build
+cd /opt/boarding/repo/frontend
+cat .env.production   # Should have: NEXT_PUBLIC_API_URL=https://boarding.path2ai.tech
+# If wrong or missing, fix and rebuild:
+echo "NEXT_PUBLIC_API_URL=https://boarding.path2ai.tech" > .env.production
+sudo npm run build
+sudo systemctl restart path-boarding-frontend
+```
+
+**5. Local vs production data**
+
+Admin and partners live in the database. Local Postgres and production RDS are separate. Partners created locally are not in production. You need to create partners on production (or migrate data) if you expect them there.
+
+**6. Backend logs**
+
+```bash
+sudo journalctl -u path-boarding-backend -n 100 --no-pager
+```
+
+Look for DB connection errors, migration failures, or startup exceptions.
+
 ---
 
-## 6. Reference
+## 6. AWS backend.env Reference
+
+The production `backend.env` lives at `/opt/boarding/backend.env`. Structure (use placeholders for secrets):
+
+```
+# Core
+DATABASE_URL="postgresql://USER:PASSWORD@RDS_ENDPOINT:5432/boarding"
+SECRET_KEY="<long random string>"
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+CORS_ORIGINS="[]"
+INVITE_TOKEN_EXPIRE_DAYS=3
+FRONTEND_BASE_URL="https://boarding.path2ai.tech"
+UPLOAD_DIR="/opt/boarding/uploads"
+
+# Email (SMTP)
+SMTP_HOST="..."
+SMTP_PORT=587
+SMTP_USER="..."
+SMTP_PASSWORD="..."
+SMTP_FROM_EMAIL="noreply@path2ai.tech"
+SMTP_FROM_NAME="Path Boarding"
+
+# UK address lookup (optional)
+ADDRESS_LOOKUP_UK_API_KEY="..."
+
+# SumSub
+SUMSUB_APP_TOKEN="..."
+SUMSUB_SECRET_KEY="..."
+SUMSUB_BASE_URL="https://api.sumsub.com"
+SUMSUB_LEVEL_NAME="Personal ID"
+
+# DocuSign (key file at /opt/boarding/keys/private.key)
+DOCUSIGN_INTEGRATION_KEY="..."
+DOCUSIGN_USER_ID="..."
+DOCUSIGN_PRIVATE_KEY=/opt/boarding/keys/private.key
+DOCUSIGN_RETURN_URL_BASE=https://boarding.path2ai.tech
+
+# TrueLayer
+TRUELAYER_CLIENT_ID="..."
+TRUELAYER_CLIENT_SECRET="..."
+TRUELAYER_REDIRECT_URI=https://boarding.path2ai.tech/boarding/truelayer-callback
+TRUELAYER_AUTH_URL=https://auth.truelayer-sandbox.com
+TRUELAYER_API_URL=https://api.truelayer-sandbox.com
+```
+
+**Key file location:** DocuSign private key is at `/opt/boarding/keys/private.key` (uploaded separately; see Section 2a).
+
+---
+
+## 7. Reference
 
 - **Full AWS setup:** [AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md)
 - **Update workflow:** [UPDATE_WORKFLOW.md](UPDATE_WORKFLOW.md)

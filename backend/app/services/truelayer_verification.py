@@ -203,7 +203,7 @@ def run_verification(
       director_match: bool
       director_score: int (0-100)
       account_holder_names: list[str]
-      info_full_name: str | None
+      info_full_name: Optional[str]
       verified: bool (overall - all checks pass)
       message: str
     """

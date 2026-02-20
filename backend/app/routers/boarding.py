@@ -3,6 +3,7 @@ import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 from pathlib import Path as PathLib
 
@@ -677,7 +678,7 @@ def get_truelayer_auth_url(
         raise HTTPException(status_code=503, detail=str(e)) from e
 
 
-def _process_truelayer_callback(code: str, state: str | None, db: Session) -> RedirectResponse:
+def _process_truelayer_callback(code: str, state: Optional[str], db: Session) -> RedirectResponse:
     """
     Shared logic for TrueLayer callback (GET or POST).
     If state is missing, redirects to frontend with error.
@@ -771,7 +772,7 @@ def _process_truelayer_callback(code: str, state: str | None, db: Session) -> Re
 @router.get("/truelayer-callback")
 def truelayer_callback_get(
     code: str = Query(..., description="Authorization code from TrueLayer"),
-    state: str | None = Query(None, description="Invite token (state) - required for session"),
+    state: Optional[str] = Query(None, description="Invite token (state) - required for session"),
     db: Session = Depends(get_db),
 ):
     """
@@ -784,7 +785,7 @@ def truelayer_callback_get(
 @router.post("/truelayer-callback")
 def truelayer_callback_post(
     code: str = Form(..., description="Authorization code from TrueLayer"),
-    state: str | None = Form(None, description="Invite token (state) - required for session"),
+    state: Optional[str] = Form(None, description="Invite token (state) - required for session"),
     db: Session = Depends(get_db),
 ):
     """
