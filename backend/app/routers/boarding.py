@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path as PathLib
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Form, HTTPException, Query
 from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -119,6 +119,13 @@ def get_saved_data(
         "company_incorporated_in": getattr(contact, "company_incorporated_in", None),
         "company_incorporation_date": getattr(contact, "company_incorporation_date", None),
         "company_industry_sic": getattr(contact, "company_industry_sic", None),
+        # TrueLayer bank verification
+        "truelayer_verified_at": (lambda t: t.isoformat() if t else None)(getattr(contact, "truelayer_verified_at", None)),
+        "truelayer_account_match": getattr(contact, "truelayer_account_match", None),
+        "truelayer_account_name_score": getattr(contact, "truelayer_account_name_score", None),
+        "truelayer_director_score": getattr(contact, "truelayer_director_score", None),
+        "truelayer_verification_message": getattr(contact, "truelayer_verification_message", None),
+        "truelayer_verified": getattr(contact, "truelayer_verified", None),
     }
 
 
@@ -634,6 +641,157 @@ def address_lookup(
             status_code=502,
             detail="Could not load addresses. Please enter your address manually.",
         ) from e
+
+
+@router.get("/truelayer-auth-url")
+def get_truelayer_auth_url(
+    token: str = Query(..., description="Invite token from boarding URL"),
+    db: Session = Depends(get_db),
+):
+    """
+    Public: get TrueLayer auth URL for bank verification.
+    User must have completed step6 (bank details) first.
+    Returns { auth_url } to redirect user to TrueLayer.
+    """
+    if not settings.TRUELAYER_CLIENT_ID or not settings.TRUELAYER_CLIENT_SECRET:
+        raise HTTPException(status_code=503, detail="Bank verification is not configured.")
+    invite = db.query(Invite).filter(Invite.token == token).first()
+    if not invite or invite.used_at or (invite.expires_at and invite.expires_at < datetime.now(timezone.utc)):
+        raise HTTPException(status_code=404, detail="Invalid or expired link")
+    event = db.query(BoardingEvent).filter(BoardingEvent.id == invite.boarding_event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Invalid link")
+    contact = db.query(BoardingContact).filter(BoardingContact.boarding_event_id == event.id).first()
+    if not contact:
+        raise HTTPException(status_code=400, detail="Complete previous steps first.")
+    if not contact.bank_sort_code or not contact.bank_account_number:
+        raise HTTPException(
+            status_code=400,
+            detail="Please save your bank details first (UK sort code and account number required for verification).",
+        )
+    try:
+        from app.services.truelayer_verification import build_auth_url
+        auth_url = build_auth_url(state=token)
+        return {"auth_url": auth_url}
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+
+def _process_truelayer_callback(code: str, state: str | None, db: Session) -> RedirectResponse:
+    """
+    Shared logic for TrueLayer callback (GET or POST).
+    If state is missing, redirects to frontend with error.
+    """
+    from urllib.parse import quote
+
+    frontend_base = settings.FRONTEND_BASE_URL.rstrip("/")
+    if not state or not state.strip():
+        logger.warning("TrueLayer callback received without state parameter")
+        return RedirectResponse(
+            url=f"{frontend_base}/?error=bank_verification_failed&reason=missing_state",
+            status_code=302,
+        )
+    state = state.strip()
+    invite = db.query(Invite).filter(Invite.token == state).first()
+    if not invite or invite.used_at or (invite.expires_at and invite.expires_at < datetime.now(timezone.utc)):
+        frontend_base = settings.FRONTEND_BASE_URL.rstrip("/")
+        return RedirectResponse(url=f"{frontend_base}/board/{state}?error=invalid_link", status_code=302)
+    event = db.query(BoardingEvent).filter(BoardingEvent.id == invite.boarding_event_id).first()
+    if not event:
+        frontend_base = settings.FRONTEND_BASE_URL.rstrip("/")
+        return RedirectResponse(url=f"{frontend_base}/board/{state}?error=invalid_link", status_code=302)
+    contact = db.query(BoardingContact).filter(BoardingContact.boarding_event_id == event.id).first()
+    if not contact:
+        frontend_base = settings.FRONTEND_BASE_URL.rstrip("/")
+        return RedirectResponse(url=f"{frontend_base}/board/{state}?error=invalid_link", status_code=302)
+
+    from app.services.truelayer_verification import (
+        exchange_code_for_token,
+        run_verification,
+    )
+
+    try:
+        access_token = exchange_code_for_token(code)
+    except Exception as e:
+        logger.exception("TrueLayer token exchange failed: %s", e)
+        contact.truelayer_verified_at = datetime.now(timezone.utc)
+        contact.truelayer_verified = False
+        contact.truelayer_verification_message = (f"Token exchange failed: {str(e)}")[:512]
+        db.commit()
+        frontend_base = settings.FRONTEND_BASE_URL.rstrip("/")
+        err_msg = str(e)[:100] if str(e) else "unknown"
+        return RedirectResponse(
+            url=f"{frontend_base}/board/{state}?step=step6&bank_verified=0&error=token_exchange&error_detail={quote(err_msg, safe='')}",
+            status_code=302,
+        )
+
+    try:
+        result = run_verification(
+            access_token=access_token,
+            user_bank_account_name=contact.bank_account_name or "",
+            user_sort_code=contact.bank_sort_code,
+            user_account_number=contact.bank_account_number,
+            company_name=contact.company_name or "",
+            director_first_name=contact.legal_first_name or "",
+            director_last_name=contact.legal_last_name or "",
+        )
+    except Exception as e:
+        logger.exception("TrueLayer verification failed: %s", e)
+        contact.truelayer_verified_at = datetime.now(timezone.utc)
+        contact.truelayer_verified = False
+        contact.truelayer_verification_message = (f"Verification failed: {str(e)}")[:512]
+        db.commit()
+        frontend_base = settings.FRONTEND_BASE_URL.rstrip("/")
+        err_msg = str(e)[:100] if str(e) else "unknown"
+        return RedirectResponse(
+            url=f"{frontend_base}/board/{state}?step=step6&bank_verified=0&error=verification_failed&error_detail={quote(err_msg, safe='')}",
+            status_code=302,
+        )
+
+    contact.truelayer_verified_at = datetime.now(timezone.utc)
+    contact.truelayer_verified = result.get("verified")
+    contact.truelayer_account_match = result.get("account_match")
+    contact.truelayer_account_name_score = result.get("account_name_score")
+    contact.truelayer_director_score = result.get("director_score")
+    contact.truelayer_account_holder_names = (
+        ",".join(result.get("account_holder_names", []))[:512] if result.get("account_holder_names") else None
+    )
+    contact.truelayer_verification_message = (result.get("message") or "")[:512]
+    db.commit()
+
+    frontend_base = settings.FRONTEND_BASE_URL.rstrip("/")
+    verified = 1 if result.get("verified") else 0
+    msg = result.get("message", "")
+    redirect_url = f"{frontend_base}/board/{state}?step=step6&bank_verified={verified}"
+    if msg:
+        redirect_url += f"&bank_verification_message={quote(msg, safe='')}"
+    return RedirectResponse(url=redirect_url, status_code=302)
+
+
+@router.get("/truelayer-callback")
+def truelayer_callback_get(
+    code: str = Query(..., description="Authorization code from TrueLayer"),
+    state: str | None = Query(None, description="Invite token (state) - required for session"),
+    db: Session = Depends(get_db),
+):
+    """
+    Callback from TrueLayer after user connects their bank (GET redirect).
+    Exchanges code for token, runs verification, saves result, redirects to frontend.
+    """
+    return _process_truelayer_callback(code, state, db)
+
+
+@router.post("/truelayer-callback")
+def truelayer_callback_post(
+    code: str = Form(..., description="Authorization code from TrueLayer"),
+    state: str | None = Form(None, description="Invite token (state) - required for session"),
+    db: Session = Depends(get_db),
+):
+    """
+    Callback from TrueLayer when response_mode=form_post is used.
+    Same logic as GET; params come from form body instead of query.
+    """
+    return _process_truelayer_callback(code, state, db)
 
 
 @router.post("/save-for-later")

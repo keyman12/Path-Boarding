@@ -83,6 +83,17 @@ class Settings(BaseSettings):
     # Base URL for DocuSign return/callback (where DocuSign redirects after signing)
     DOCUSIGN_RETURN_URL_BASE: str = "http://localhost:8000"
 
+    # TrueLayer bank verification (Data API + Verification API)
+    TRUELAYER_CLIENT_ID: str = ""
+    TRUELAYER_CLIENT_SECRET: str = ""
+    # Redirect URI: where TrueLayer redirects after user connects bank. Local: http://localhost:8000/boarding/truelayer-callback. Prod: https://boarding.path2ai.tech/boarding/truelayer-callback
+    TRUELAYER_REDIRECT_URI: str = "http://localhost:8000/boarding/truelayer-callback"
+    # Sandbox: auth.truelayer-sandbox.com, api.truelayer-sandbox.com. Live: auth.truelayer.com, api.truelayer.com
+    TRUELAYER_AUTH_URL: str = "https://auth.truelayer-sandbox.com"
+    TRUELAYER_API_URL: str = "https://api.truelayer-sandbox.com"
+    # Sandbox: uk-cs-mock. Live: uk-ob-all or specific providers
+    TRUELAYER_PROVIDERS: str = "uk-cs-mock"
+
     class Config:
         env_file = ".env"
         case_sensitive = True

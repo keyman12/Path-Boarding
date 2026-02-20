@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -56,5 +56,13 @@ class BoardingContact(Base):
     bank_sort_code = Column(String(16), nullable=True)
     bank_account_number = Column(String(16), nullable=True)
     bank_iban = Column(String(34), nullable=True)
+    # TrueLayer bank verification
+    truelayer_verified_at = Column(DateTime(timezone=True), nullable=True)
+    truelayer_account_match = Column(Boolean(), nullable=True)
+    truelayer_account_name_score = Column(Integer(), nullable=True)
+    truelayer_director_score = Column(Integer(), nullable=True)
+    truelayer_account_holder_names = Column(String(512), nullable=True)
+    truelayer_verification_message = Column(String(512), nullable=True)
+    truelayer_verified = Column(Boolean(), nullable=True)
 
     boarding_event = relationship("BoardingEvent", back_populates="contact")

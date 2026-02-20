@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { API_BASE, apiGet, apiPost } from "@/lib/api";
 
@@ -160,6 +160,7 @@ function BoardingRightPanel({
 export default function BoardingEntryPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const token = typeof params.token === "string" ? params.token : "";
 
   const [inviteInfo, setInviteInfo] = useState<InviteInfo | null>(null);
@@ -246,6 +247,7 @@ export default function BoardingEntryPage() {
   const [showCompanyDropdown, setShowCompanyDropdown] = useState(false);
   const companySearchRef = useRef<HTMLDivElement>(null);
   const [companyDetailsConfirmed, setCompanyDetailsConfirmed] = useState(false);
+  const [companyDetailsEditing, setCompanyDetailsEditing] = useState(false);
   const [pscConfirmed, setPscConfirmed] = useState<boolean | null>(null);
   const [pscs, setPscs] = useState<Array<{
     id: string;
@@ -317,6 +319,9 @@ export default function BoardingEntryPage() {
   const [accountNumberError, setAccountNumberError] = useState<string | null>(null);
   const [ibanError, setIbanError] = useState<string | null>(null);
   const [step6Submitting, setStep6Submitting] = useState(false);
+  const [bankVerifying, setBankVerifying] = useState(false);
+  const [bankVerificationMessage, setBankVerificationMessage] = useState<string | null>(null);
+  const [bankVerified, setBankVerified] = useState<boolean | null>(null);
   const [reviewAgreeChecked, setReviewAgreeChecked] = useState(false);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
@@ -609,6 +614,9 @@ export default function BoardingEntryPage() {
           bank_sort_code?: string;
           bank_account_number?: string;
           bank_iban?: string;
+          truelayer_verified_at?: string | null;
+          truelayer_verified?: boolean | null;
+          truelayer_verification_message?: string | null;
         }>(`/boarding/saved-data?token=${encodeURIComponent(token)}`);
         if (cancelled) return;
         if (res.data?.has_data) {
@@ -696,6 +704,10 @@ export default function BoardingEntryPage() {
           if (res.data.bank_sort_code != null) setSortCode(formatSortCode(res.data.bank_sort_code));
           if (res.data.bank_account_number != null) setAccountNumber(res.data.bank_account_number);
           if (res.data.bank_iban != null) setIban(res.data.bank_iban);
+          if (res.data.truelayer_verified_at != null) {
+            setBankVerified(res.data.truelayer_verified ?? false);
+            setBankVerificationMessage(res.data.truelayer_verification_message ?? null);
+          }
           
           // Navigate to the correct step based on current_step
           if (res.data.email_verified && res.data.current_step) {
@@ -712,6 +724,43 @@ export default function BoardingEntryPage() {
       cancelled = true;
     };
   }, [token, inviteInfo]); // run once when we have inviteInfo
+
+  // Handle return from TrueLayer bank verification callback
+  useEffect(() => {
+    const stepParam = searchParams.get("step");
+    const verifiedParam = searchParams.get("bank_verified");
+    const messageParam = searchParams.get("bank_verification_message");
+    const errorParam = searchParams.get("error");
+    const errorDetailParam = searchParams.get("error_detail");
+    if (stepParam === "step6" && token) {
+      setStep("step6");
+      setBankConfirmationChecked(true); // restore – user had it checked to reach Verify
+      if (verifiedParam !== null) {
+        setBankVerified(verifiedParam === "1");
+        if (messageParam) setBankVerificationMessage(decodeURIComponent(messageParam));
+      }
+      if (errorParam) {
+        let msg = "Bank verification failed. Please try again.";
+        if (errorParam === "token_exchange") {
+          msg = "Could not complete bank connection. Check that your redirect URI is whitelisted in TrueLayer Console.";
+        } else if (errorParam === "verification_failed") {
+          msg = "Verification API failed. Please try again.";
+        }
+        if (errorDetailParam) {
+          try {
+            const detail = decodeURIComponent(errorDetailParam);
+            if (detail && detail.length < 150) msg += ` (${detail})`;
+          } catch {
+            /* ignore */
+          }
+        }
+        setBankVerificationMessage(msg);
+      }
+      if (verifiedParam !== null || errorParam) {
+        router.replace(`/board/${token}`, { scroll: false });
+      }
+    }
+  }, [searchParams, token, router]);
 
   // Pre-populate directors when company is confirmed: matching verified user + Louise for demo
   const verifiedUserName = [legalFirstName.trim(), legalLastName.trim()].filter(Boolean).join(" ");
@@ -2064,6 +2113,7 @@ export default function BoardingEntryPage() {
                             const c = company as typeof company & { hasCorporateShareholders?: boolean };
                             setSelectedCompany(c);
                             setCompanySearchText(c.name);
+                            setCompanyDetailsEditing(false);
                             setShowCompanyDropdown(false);
                             setCompanySearchResults([]);
                             setPscConfirmed(null);
@@ -2104,33 +2154,95 @@ export default function BoardingEntryPage() {
             {/* Company confirmation - shown when company selected */}
             {selectedCompany && (
               <div className="mb-8">
-                <h2 className="text-path-h3 font-poppins text-path-grey-900 mb-4">Confirm your company details</h2>
+                <h2 className="text-path-h3 font-poppins text-path-grey-900 mb-4">
+                  {companyDetailsEditing ? "Edit your company details" : "Confirm your company details"}
+                </h2>
                 <div className="p-6 border border-path-grey-200 rounded-lg space-y-4 bg-path-grey-50/50">
                   <div>
-                    <div className="text-path-p2 text-path-grey-600 mt-1">Legal name</div>
-                    <div className="text-path-p1 font-medium text-path-grey-900">{selectedCompany.name}</div>
+                    <label className="block text-path-p2 text-path-grey-600 mt-1 mb-1">Legal name</label>
+                    {companyDetailsEditing ? (
+                      <input
+                        type="text"
+                        value={selectedCompany.name}
+                        onChange={(e) => setSelectedCompany((prev) => prev ? { ...prev, name: e.target.value } : null)}
+                        className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                      />
+                    ) : (
+                      <div className="text-path-p1 font-medium text-path-grey-900">{selectedCompany.name}</div>
+                    )}
                   </div>
                   <div>
-                    <div className="text-path-p2 text-path-grey-600 mt-1">Company number</div>
-                    <div className="text-path-p1 font-medium text-path-grey-900">{selectedCompany.number}</div>
+                    <label className="block text-path-p2 text-path-grey-600 mt-1 mb-1">Company number</label>
+                    {companyDetailsEditing ? (
+                      <input
+                        type="text"
+                        value={selectedCompany.number}
+                        onChange={(e) => setSelectedCompany((prev) => prev ? { ...prev, number: e.target.value } : null)}
+                        className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                      />
+                    ) : (
+                      <div className="text-path-p1 font-medium text-path-grey-900">{selectedCompany.number}</div>
+                    )}
                   </div>
                   <div>
-                    <div className="text-path-p2 text-path-grey-600 mt-1">Registered address</div>
-                    <div className="text-path-p1 text-path-grey-900 whitespace-pre-line">{selectedCompany.fullAddress}</div>
+                    <label className="block text-path-p2 text-path-grey-600 mt-1 mb-1">Registered address</label>
+                    {companyDetailsEditing ? (
+                      <textarea
+                        value={selectedCompany.fullAddress}
+                        onChange={(e) => setSelectedCompany((prev) => prev ? { ...prev, fullAddress: e.target.value } : null)}
+                        rows={4}
+                        className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                      />
+                    ) : (
+                      <div className="text-path-p1 text-path-grey-900 whitespace-pre-line">{selectedCompany.fullAddress}</div>
+                    )}
                   </div>
                   <div>
-                    <div className="text-path-p2 text-path-grey-600 mt-1">Incorporated</div>
-                    <div className="text-path-p1 text-path-grey-900">{selectedCompany.incorporated}</div>
+                    <label className="block text-path-p2 text-path-grey-600 mt-1 mb-1">Incorporated (DD/MM/YYYY)</label>
+                    {companyDetailsEditing ? (
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={selectedCompany.incorporated}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const raw = val.replace(/\D/g, "").slice(0, 8);
+                          let formatted = "";
+                          if (raw.length > 0) formatted = raw.slice(0, 2);
+                          if (raw.length > 2) formatted += "/" + raw.slice(2, 4);
+                          if (raw.length > 4) formatted += "/" + raw.slice(4, 8);
+                          if (val.trim().endsWith("/") && (raw.length === 2 || raw.length === 4)) formatted += "/";
+                          setSelectedCompany((prev) => prev ? { ...prev, incorporated: formatted } : null);
+                        }}
+                        placeholder="DD/MM/YYYY"
+                        maxLength={10}
+                        className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                      />
+                    ) : (
+                      <div className="text-path-p1 text-path-grey-900">{selectedCompany.incorporated}</div>
+                    )}
                   </div>
                   <div>
-                    <div className="text-path-p2 text-path-grey-600 mt-1">Industry (SIC)</div>
-                    <div className="text-path-p1 text-path-grey-900">{selectedCompany.industry}</div>
+                    <label className="block text-path-p2 text-path-grey-600 mt-1 mb-1">Industry (SIC)</label>
+                    {companyDetailsEditing ? (
+                      <input
+                        type="text"
+                        value={selectedCompany.industry}
+                        onChange={(e) => setSelectedCompany((prev) => prev ? { ...prev, industry: e.target.value } : null)}
+                        className="w-full px-3 py-2 border border-path-grey-300 rounded-lg text-path-p1 text-path-grey-900 focus:ring-2 focus:ring-path-primary focus:border-path-primary"
+                      />
+                    ) : (
+                      <div className="text-path-p1 text-path-grey-900">{selectedCompany.industry}</div>
+                    )}
                   </div>
                 </div>
                 <div className="mt-6 flex flex-col gap-3">
                   <button
                     type="button"
-                    onClick={() => setCompanyDetailsConfirmed(true)}
+                    onClick={() => {
+                      setCompanyDetailsConfirmed(true);
+                      setCompanyDetailsEditing(false);
+                    }}
                     className="w-full py-3 px-4 bg-path-primary text-white rounded-lg font-medium hover:bg-path-primary-light-1 transition-colors"
                   >
                     These details are correct
@@ -2138,15 +2250,25 @@ export default function BoardingEntryPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      setSelectedCompany(null);
-                      setCompanySearchText("");
-                      setCompanyDetailsConfirmed(false);
-                      setPscConfirmed(null);
-                      setPscs([
-                        { id: "1", fullLegalName: "David Key", dateOfBirth: "", residentialPostcode: "", residentialLine1: "", residentialLine2: "", residentialTown: "", nationality: "", ownership: 50 },
-                        { id: "2", fullLegalName: "Louise Key", dateOfBirth: "", residentialPostcode: "", residentialLine1: "", residentialLine2: "", residentialTown: "", nationality: "", ownership: 50 },
-                      ]);
-                      setCorporateShareholders([]);
+                      setCompanyDetailsEditing(true);
+                      // Convert "12 March 2021" style to DD/MM/YYYY when entering edit mode
+                      setSelectedCompany((prev) => {
+                        if (!prev?.incorporated) return prev;
+                        const s = prev.incorporated.trim();
+                        const ddmm = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+                        if (ddmm) return prev;
+                        const months: Record<string, string> = { january: "01", february: "02", march: "03", april: "04", may: "05", june: "06", july: "07", august: "08", september: "09", october: "10", november: "11", december: "12" };
+                        const match = /^(\d{1,2})\s+(\w+)\s+(\d{4})$/.exec(s);
+                        if (match) {
+                          const [, day, month, year] = match;
+                          const m = months[month.toLowerCase()];
+                          if (m) {
+                            const d = day.padStart(2, "0");
+                            return { ...prev, incorporated: `${d}/${m}/${year}` };
+                          }
+                        }
+                        return prev;
+                      });
                     }}
                     className="w-full py-3 px-4 border border-path-grey-300 text-path-grey-700 rounded-lg font-medium hover:bg-path-grey-100 transition-colors"
                   >
@@ -3148,6 +3270,57 @@ export default function BoardingEntryPage() {
       : (ibanNormalised.length > 0 && !validateIban(iban))) &&
     bankConfirmationChecked;
 
+  async function handleVerifyWithBank() {
+    if (!isUkBank || !step6Valid) return;
+    if (validateSortCode(sortCode) || validateAccountNumber(accountNumber)) return;
+    setBankVerifying(true);
+    try {
+      // Save first so backend has bank details
+      const companyName = selectedCompany?.name ?? (businessType === "sole_trader" ? "Sole Trader" : "");
+      const payload: Record<string, unknown> = {
+        bank_account_name: accountName.trim(),
+        bank_currency: bankCurrency,
+        bank_country: bankCountry,
+        bank_sort_code: sortCode.replace(/\D/g, ""),
+        bank_account_number: accountNumber.replace(/\D/g, ""),
+        vat_number: vatNumber.trim() || undefined,
+        customer_industry: customerIndustry || undefined,
+        company_name: companyName || undefined,
+        company_number: selectedCompany?.number || undefined,
+      };
+      const saveRes = await apiPost<{ saved?: boolean }>(
+        `/boarding/step/6?token=${encodeURIComponent(token)}`,
+        payload
+      );
+      if (saveRes.error) {
+        alert(saveRes.error);
+        setBankVerifying(false);
+        return;
+      }
+      // Fetch auth URL with timeout (TrueLayer sandbox can be slow)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const authRes = await apiGet<{ auth_url: string }>(
+        `/boarding/truelayer-auth-url?token=${encodeURIComponent(token)}`,
+        { signal: controller.signal }
+      );
+      clearTimeout(timeoutId);
+      if (authRes.error || !authRes.data?.auth_url) {
+        alert(authRes.error ?? "Could not start bank verification.");
+        setBankVerifying(false);
+        return;
+      }
+      // Use replace so back button doesn't return to loading state
+      window.location.replace(authRes.data.auth_url);
+    } catch (e) {
+      const msg = e instanceof Error && e.name === "AbortError"
+        ? "Request timed out. TrueLayer sandbox may be slow – try again or open in incognito."
+        : "Failed to start bank verification. Please try again.";
+      alert(msg);
+      setBankVerifying(false);
+    }
+  }
+
   async function handleStep6Continue() {
     if (!step6Valid) return;
     setSortCodeError(validateSortCode(sortCode));
@@ -3361,12 +3534,40 @@ export default function BoardingEntryPage() {
                 </label>
               </div>
 
+              {bankVerificationMessage && (
+                <div className={`p-3 rounded-lg text-path-p2 ${bankVerified ? "bg-green-50 text-green-800" : "bg-amber-50 text-amber-800"}`}>
+                  {bankVerificationMessage}
+                </div>
+              )}
+
+              {isUkBank && (
+                <>
+                  <p className="text-path-p2 text-path-grey-700 mb-2">
+                    Bank verification is required before continuing. Please verify your account with your bank.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleVerifyWithBank}
+                    disabled={!step6Valid || bankVerifying || bankVerified === true}
+                    className="w-full py-3 px-4 rounded-lg font-medium border-2 border-path-primary text-path-primary bg-white hover:bg-path-primary/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {bankVerifying ? "Redirecting to your bank..." : "Verify with my bank"}
+                  </button>
+                </>
+              )}
+
               <button
                 type="button"
                 onClick={handleStep6Continue}
-                disabled={!step6Valid || step6Submitting}
+                disabled={
+                  !step6Valid ||
+                  step6Submitting ||
+                  (isUkBank && bankVerified === null)
+                }
                 className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
-                  step6Valid && !step6Submitting ? "bg-path-primary text-white hover:bg-path-primary-light-1" : "bg-path-grey-200 text-path-grey-500 cursor-not-allowed"
+                  step6Valid && !step6Submitting && (!isUkBank || bankVerified !== null)
+                    ? "bg-path-primary text-white hover:bg-path-primary-light-1"
+                    : "bg-path-grey-200 text-path-grey-500 cursor-not-allowed"
                 }`}
               >
                 {step6Submitting ? "Saving..." : "Continue"}
@@ -3592,11 +3793,16 @@ export default function BoardingEntryPage() {
                           {isUkBank && sortCode && accountNumber && (
                             <>
                               <p className="text-xs text-path-grey-700 mb-1">Sort code: {sortCode}</p>
-                              <p className="text-xs text-path-grey-700">Account: ****{accountNumber.slice(-4)}</p>
+                              <p className="text-xs text-path-grey-700 mb-1">Account: ****{accountNumber.slice(-4)}</p>
                             </>
                           )}
                           {!isUkBank && iban && (
-                            <p className="text-xs text-path-grey-700">IBAN: {iban.replace(/\s/g, "").slice(0, 4)}****{iban.replace(/\s/g, "").slice(-4)}</p>
+                            <p className="text-xs text-path-grey-700 mb-1">IBAN: {iban.replace(/\s/g, "").slice(0, 4)}****{iban.replace(/\s/g, "").slice(-4)}</p>
+                          )}
+                          {isUkBank && (
+                            <p className={`text-xs font-medium ${bankVerified ? "text-green-600" : "text-amber-600"}`}>
+                              Bank verification: {bankVerified ? "Verified" : "Further checks required"}
+                            </p>
                           )}
                         </>
                       ) : (
